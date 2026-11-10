@@ -23,7 +23,7 @@ static MAYBE_CONST char *colors[][3] = {
        [SchemeSel]  = { selfgcolor,  selbgcolor,  selbordercolor  },
 };
 
-#define CENTER_NEW_FLOATING_WINDOWS 1 // so, basically, it does what it says. (make 0 to turn off)
+#define CENTER_NEW_FLOATING_WINDOWS 0 // so, basically, it does what it says. (make 0 to turn off)
 #define NEW_FLOATING_WINDOWS_APPEAR_UNDER_CURSOR 0 // so, basically, it does what it says. (make 0 to turn off) 
 
 #if GAPS
@@ -75,7 +75,7 @@ static const char *occupiedtags[] = { "1+", "2+", "3+", "4+", "5+", "6+", "7+", 
 /* vxwm will execute this on startup (can be skipped with -ignoreautostart vxwm flag). */
 
 static const char *const autostart[] = {
-	"st",
+	"setxkbmap -layout us,mm -option grp:win_space_toggle",
 	NULL /* must end with NULL */
 };
 #endif
@@ -87,7 +87,6 @@ static const Rule rules[] = {
 	 */
 	/* class      instance    title       tags mask     isfloating   monitor */
 	{ "Gimp",     NULL,       NULL,       0,            1,           -1 },
-	{ "Firefox",  NULL,       NULL,       1 << 8,       0,           -1 },
 };
 
 /* layout(s) */
@@ -99,10 +98,8 @@ static const int lockfullscreen = 1; /* 1 will force focus on the fullscreen win
 static const int refreshrate = 360;  /* refresh rate (per second) for client move/resize, set it to your monitor refresh rate or double of that*/
 #endif //LOCK_MOVE_RESIZE_REFRESH_RATE
 static const Layout layouts[] = {
-	/* symbol     arrange function */
-  { "><>",      NULL },    /* no layout function means floating behavior */
-	{ "[]=",      tile },    /* first entry is default */
-	{ "[M]",      monocle },
+	/* Canvas is free-positioned; infinite tags supplies the movable workspace view. */
+	{ "Canvas", NULL },
 };
 
 /* key definitions */
@@ -113,10 +110,8 @@ static const Layout layouts[] = {
 #define SCROLL_DOWN Button5
 
 #define TAGKEYS(KEY,TAG) \
-	{ MODKEY,                       KEY,      view,           {.ui = 1 << TAG} }, \
-	{ MODKEY|ControlMask,           KEY,      toggleview,     {.ui = 1 << TAG} }, \
-	{ Mod1Mask,                     KEY,      tag,            {.ui = 1 << TAG} }, \
-	{ MODKEY|ControlMask|ShiftMask, KEY,      toggletag,      {.ui = 1 << TAG} },
+	{ MODKEY,           KEY, view, {.ui = 1 << TAG} }, \
+	{ MODKEY|ShiftMask, KEY, tag,  {.ui = 1 << TAG} },
 
 /* helper for spawning shell commands in the pre dwm-5.0 fashion */
 #define SHCMD(cmd) { .v = (const char*[]){ "/bin/sh", "-c", cmd, NULL } }
@@ -124,8 +119,9 @@ static const Layout layouts[] = {
 /* commands */
 static char dmenumon[2] = "0"; /* component of dmenucmd, manipulated in spawn() */
 static const char *dmenucmd[] = { "dmenu_run", "-fn", dmenufont, "-nb", normbgcolor, "-nf", normfgcolor, "-sb", selbordercolor, "-sf", selfgcolor, NULL };
+static const char *blendercmd[] = { "blender", NULL };
 
-static const char *termcmd[]  = { "st", NULL };
+static const char *termcmd[]  = { "kitty", NULL };
 
 #if ZOOM
 static const char *zoomin[] = { "vcompmgr", "-Z", "+0.15", NULL }; // zoom in
@@ -134,84 +130,28 @@ static const char *zoomreset[] = { "vcompmgr", "-Z", "1", NULL }; // set zoom to
 #endif
 
 static const Key keys[] = {
-	/* modifier                     key        function        argument */
-	{ MODKEY,                       XK_p,      spawn,          {.v = dmenucmd } },
-  { MODKEY|ShiftMask,             XK_Return, spawn,          {.v = termcmd } },
-	{ MODKEY,                       XK_b,      togglebar,      {0} },
-	{ MODKEY,                       XK_j,      focusstack,     {.i = +1 } },
-	{ MODKEY,                       XK_k,      focusstack,     {.i = -1 } },
-	{ MODKEY,                       XK_i,      incnmaster,     {.i = +1 } },
-	{ MODKEY,                       XK_d,      incnmaster,     {.i = -1 } },
-	{ MODKEY,                       XK_h,      setmfact,       {.f = -0.05} },
-	{ MODKEY,                       XK_l,      setmfact,       {.f = +0.05} },
-	{ MODKEY,                       XK_Return, swapmaster,     {0} },
-	{ MODKEY,                       XK_0,      view,           {0} },
-	{ MODKEY|ShiftMask,             XK_c,      killclient,     {0} },
-	{ MODKEY,                       XK_t,      setlayout,      {.v = &layouts[0]} },
-	{ MODKEY,                       XK_f,      setlayout,      {.v = &layouts[1]} },
-	{ MODKEY,                       XK_m,      setlayout,      {.v = &layouts[2]} },
-	{ MODKEY,                       XK_space,  setlayout,      {0} },
-	{ MODKEY|ShiftMask,             XK_space,  togglefloating, {0} }, //default toggle floating bind.
-	{ MODKEY,                       XK_Tab,    view,           {.ui = ~0 } },
-	{ MODKEY|ShiftMask,             XK_0,      tag,            {.ui = ~0 } },
-	{ MODKEY,                       XK_comma,  focusmon,       {.i = -1 } },
-	{ MODKEY,                       XK_period, focusmon,       {.i = +1 } },
-	{ MODKEY|ShiftMask,             XK_comma,  tagmon,         {.i = -1 } },
-	{ MODKEY|ShiftMask,             XK_period, tagmon,         {.i = +1 } },
-	TAGKEYS(                        XK_1,                      0)
-	TAGKEYS(                        XK_2,                      1)
-	TAGKEYS(                        XK_3,                      2)
-	TAGKEYS(                        XK_4,                      3)
-	TAGKEYS(                        XK_5,                      4)
-	TAGKEYS(                        XK_6,                      5)
-	TAGKEYS(                        XK_7,                      6)
-	TAGKEYS(                        XK_8,                      7)
-	TAGKEYS(                        XK_9,                      8)
-	{ MODKEY|ShiftMask,             XK_q,      quit,           {0} },
-#if XRDB
-  { MODKEY,                       XK_F5,     xrdb,           {.v = NULL } },
-#endif
-#if FULLSCREEN
-  { MODKEY|ShiftMask,             XK_f,      togglefullscr,  {0} },
-#endif
-#if ENHANCED_TOGGLE_FLOATING
-  { MODKEY,                       XK_q,      enhancedtogglefloating, {0} }, //enhanced toggle floating bind.
-#endif
-#if GAPS
-  { MODKEY,                       XK_minus,  setgaps,        {.i = -1 } },
-  { MODKEY,                       XK_equal,  setgaps,        {.i = +1 } },
-  { MODKEY|ShiftMask,             XK_equal,  setgaps,        {.i = 0  } },
-#endif
-#if MOVE_RESIZE_WITH_KEYBOARD
-  { MODKEY,					              XK_Down,	moveresize,		{.v = (int []){ 0, MOVE_WITH_KEYBOARD_STEP, 0, 0 }}}, // Move window to down
-  { MODKEY,					              XK_Up,		moveresize,		{.v = (int []){ 0, -MOVE_WITH_KEYBOARD_STEP, 0, 0 }}}, // Move window to up
-  { MODKEY,					              XK_Right,	moveresize,		{.v = (int []){ MOVE_WITH_KEYBOARD_STEP, 0, 0, 0 }}}, // Move window to right
-  { MODKEY,					              XK_Left,	moveresize,		{.v = (int []){ -MOVE_WITH_KEYBOARD_STEP, 0, 0, 0 }}}, // Move window to left
-  { MODKEY|ControlMask,			      XK_Down,	moveresize,		{.v = (int []){ 0, 0, 0, RESIZE_WITH_KEYBOARD_STEP }}}, // Resize window
-  { MODKEY|ControlMask,			      XK_Up,		moveresize,		{.v = (int []){ 0, 0, 0, -RESIZE_WITH_KEYBOARD_STEP }}}, // Resize window
-  { MODKEY|ControlMask,			      XK_Right,	moveresize,		{.v = (int []){ 0, 0, RESIZE_WITH_KEYBOARD_STEP, 0 }}}, // Resize window
-  { MODKEY|ControlMask,			      XK_Left,	moveresize,		{.v = (int []){ 0, 0, -RESIZE_WITH_KEYBOARD_STEP, 0 }}}, // Resize window
-#endif
+	/* Custom defaults. Super is Mod4; Alt is Mod1. */
+	{ MODKEY, XK_Return, spawn, {.v = termcmd} },
+	{ MODKEY, XK_d,      spawn, {.v = dmenucmd} },
+	{ MODKEY, XK_b,      spawn, {.v = blendercmd} },
+	{ MODKEY, XK_j,      focusstack, {.i = +1} },
+	{ MODKEY, XK_k,      focusstack, {.i = -1} },
+	{ MODKEY, XK_q,      killclient, {0} },
+	{ MODKEY, XK_m,      minimizeclient, {0} },
+	{ MODKEY|ShiftMask, XK_m, restoreminimized, {0} },
+	{ MODKEY, XK_f,      maximizeorrestore, {0} },
 #if INFINITE_TAGS
-  { MODKEY,                       XK_r,      homecanvas,       {0} }, // Return to x:0, y:0 position
-  { MODKEY|ShiftMask,             XK_Left,   movecanvas,       {.i = 0} }, // Move your position to left
-  { MODKEY|ShiftMask,             XK_Right,  movecanvas,       {.i = 1} }, // Move your position to right
-  { MODKEY|ShiftMask,             XK_Up,     movecanvas,       {.i = 2} }, // Move your position up
-  { MODKEY|ShiftMask,             XK_Down,   movecanvas,       {.i = 3} }, // Move your position down
-  { MODKEY|ShiftMask,             XK_d,      centerwindow,     {0} },
-  { MODKEY|ControlMask,           XK_z,      pinwindow,        {0} },
+	{ MODKEY, XK_p,      pinwindow, {0} },
 #endif
-#if DIRECTIONAL_FOCUS
-	{ ALTERNATE_MODKEY,             XK_Left,   focusdir,       {.i = 0 } }, // left
-	{ ALTERNATE_MODKEY,             XK_Right,  focusdir,       {.i = 1 } }, // right
-	{ ALTERNATE_MODKEY,             XK_Up,     focusdir,       {.i = 2 } }, // up
-	{ ALTERNATE_MODKEY,             XK_Down,   focusdir,       {.i = 3 } }, // down
-#endif
-#if ZOOM
- { ALTERNATE_MODKEY,              XK_r,      spawn,          {.v = zoomreset } },
- { MODKEY,                        XK_equal,  spawn,          {.v = zoomin } },
- { MODKEY,                        XK_minus,  spawn,          {.v = zoomout } },
-#endif
+	TAGKEYS(XK_1, 0)
+	TAGKEYS(XK_2, 1)
+	TAGKEYS(XK_3, 2)
+	TAGKEYS(XK_4, 3)
+	TAGKEYS(XK_5, 4)
+	TAGKEYS(XK_6, 5)
+	TAGKEYS(XK_7, 6)
+	TAGKEYS(XK_8, 7)
+	TAGKEYS(XK_9, 8)
 };
 
 /* button definitions */
@@ -221,7 +161,6 @@ static const Button buttons[] = {
 #if INFINITE_TAGS
   { ClkRootWin,           MODKEY|ShiftMask,         Button1,        movecanvasmouse,     {.f = 1.5 } }, 
   { ClkClientWin,         MODKEY|ShiftMask,         Button1,        movecanvasmouse,     {.f = 1.5 } },
-  { ClkRootWin,           0,                        Button1,        movecanvasmouse,     {.f = 1.5 } },
   /* .f = 1 is moving multiplier, for example if set to 0.5, canvas will move 2 times slower, if set to 2, canvas will move 2 times faster. 
      If you want inverted canvas move then set the value to a negative value. */
 #endif
@@ -232,8 +171,6 @@ static const Button buttons[] = {
   { ClkClientWin,         MODKEY,         SCROLL_UP,      spawn,          {.v = zoomin } },
   { ClkClientWin,         MODKEY,         SCROLL_DOWN,    spawn,          {.v = zoomout } },
 #endif
-	{ ClkLtSymbol,          0,              Button1,        setlayout,      {0} },
-	{ ClkLtSymbol,          0,              Button3,        setlayout,      {.v = &layouts[2]} },
 	{ ClkWinTitle,          0,              Button2,        swapmaster,     {0} },
 	{ ClkStatusText,        0,              Button2,        spawn,          {.v = termcmd } },
 	{ ClkClientWin,         MODKEY,         Button1,        movemouse,      {0} },

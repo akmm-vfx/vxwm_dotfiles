@@ -52,7 +52,7 @@ From this moment, i'll try to comment the code and also make it more readable.
 #define CLEANMASK(mask)         (mask & ~(numlockmask|LockMask) & (ShiftMask|ControlMask|Mod1Mask|Mod2Mask|Mod3Mask|Mod4Mask|Mod5Mask))
 #define INTERSECT(x,y,w,h,m)    (MAX(0, MIN((x)+(w),(m)->wx+(m)->ww) - MAX((x),(m)->wx)) \
                                * MAX(0, MIN((y)+(h),(m)->wy+(m)->wh) - MAX((y),(m)->wy)))
-#define ISVISIBLE(C)            ((C->tags & C->mon->tagset[C->mon->seltags]))
+#define ISVISIBLE(C)            ((C->tags & C->mon->tagset[C->mon->seltags]) && !C->isminimized)
 #define MOUSEMASK               (BUTTONMASK|PointerMotionMask)
 #define WIDTH(X)                ((X)->w + 2 * (X)->bw)
 #define HEIGHT(X)               ((X)->h + 2 * (X)->bw)
@@ -133,6 +133,8 @@ struct Client {
 	int bw, oldbw;
 	unsigned int tags;
 	int isfixed, isfloating, isurgent, neverfocus, oldstate, isfullscreen;
+	int isminimized, ismaximized;
+	int max_restore_x, max_restore_y, max_restore_w, max_restore_h;
 	Client *next;
 	Client *snext;
 	Monitor *mon;
@@ -249,6 +251,10 @@ static void grabkeys(void);
 static void incnmaster(const Arg *arg);
 static void keypress(XEvent *e);
 static void killclient(const Arg *arg);
+static void minimizeclient(const Arg *arg);
+static void maximizeorrestore(const Arg *arg);
+static void restoreminimized(const Arg *arg);
+static void togglemaximize(Client *c);
 static void manage(Window w, XWindowAttributes *wa);
 static void mappingnotify(XEvent *e);
 static void maprequest(XEvent *e);
@@ -1881,6 +1887,65 @@ setfocus(Client *c)
   XChangeProperty(dpy, root, netatom[NetActiveWindow], XA_WINDOW, 32,
   PropModeReplace, (unsigned char *)&c->win, 1);
 	sendevent(c, wmatom[WMTakeFocus]);
+}
+
+void
+togglemaximize(Client *c)
+{
+	if (!c || c->isfullscreen)
+		return;
+	if (c->ismaximized) {
+		c->ismaximized = 0;
+		resizeclient(c, c->max_restore_x, c->max_restore_y, c->max_restore_w, c->max_restore_h);
+	} else {
+		c->max_restore_x = c->x;
+		c->max_restore_y = c->y;
+		c->max_restore_w = c->w;
+		c->max_restore_h = c->h;
+		c->ismaximized = 1;
+		resizeclient(c, c->mon->wx, c->mon->wy,
+			c->mon->ww - 2 * c->bw, c->mon->wh - 2 * c->bw);
+	}
+	XRaiseWindow(dpy, c->win);
+	arrange(c->mon);
+}
+
+void
+minimizeclient(const Arg *arg)
+{
+	Client *c = selmon ? selmon->sel : NULL;
+
+	if (!c || c->isfullscreen || c->isminimized)
+		return;
+	c->isminimized = 1;
+	focus(NULL);
+	arrange(c->mon);
+}
+
+void
+maximizeorrestore(const Arg *arg)
+{
+	togglemaximize(selmon ? selmon->sel : NULL);
+}
+
+void
+restoreminimized(const Arg *arg)
+{
+	Client *c;
+	Arg viewarg;
+
+	if (!selmon)
+		return;
+	for (c = selmon->stack; c && !c->isminimized; c = c->snext);
+	if (!c)
+		return;
+	c->isminimized = 0;
+	if (!(c->tags & c->mon->tagset[c->mon->seltags])) {
+		viewarg.ui = c->tags;
+		view(&viewarg);
+	}
+	arrange(c->mon);
+	focus(c);
 }
 
 void

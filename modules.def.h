@@ -82,7 +82,7 @@ Even though this sounds complex, it is actually pretty lightweight, and is very 
 
 
 /* Misc */
-#define AUTOSTART 0 // Support for vxwm being able to start apps defined in config.h in startup.
+#define AUTOSTART 1 // Support for vxwm being able to start apps defined in config.h in startup.
 #define FULLSCREEN 1 // Support for toggling fullscreen.
 #define MOVE_IN_TILED 1 // Support for moving windows in tiled mode.
 #define DIRECTIONAL_FOCUS 1 // yeah.
