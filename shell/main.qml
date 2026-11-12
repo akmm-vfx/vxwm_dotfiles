@@ -64,9 +64,6 @@ Window {
     DesktopRamUsage {
         textColor: shell.surfaceContainer
     }
-    DesktopPerformance {
-        textColor: shell.surfaceContainer
-    }
     LauncherPanel {
         backgroundColor: shell.barBackground
         textColor: shell.barAccent

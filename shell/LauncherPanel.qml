@@ -52,6 +52,11 @@ Window {
     readonly property color selectionColor: Qt.rgba(
         textColor.r, textColor.g, textColor.b, 0.1)
 
+    function scheduleVisibleVersions() {
+        if (!appCatalog.clipboardMode && appCatalog.filterText.length > 0)
+            versionLookup.restart()
+    }
+
     visible: launcherState.count > 0 && !dismissed
     color: "transparent"
     title: "VXWM Application Launcher"
@@ -86,6 +91,20 @@ Window {
         onCountChanged: {
             if (launcher.visible)
                 Qt.callLater(function() { launcher.raise() })
+        }
+    }
+
+    Timer {
+        id: versionLookup
+        interval: 200
+        repeat: false
+        onTriggered: {
+            if (appCatalog.clipboardMode || appCatalog.filterText.length === 0
+                    || results.height <= 0)
+                return
+            const first = Math.floor(results.contentY / launcher.rowHeight)
+            const visible = Math.ceil(results.height / launcher.rowHeight) + 1
+            appCatalog.resolveVersions(first, visible)
         }
     }
 
@@ -188,6 +207,7 @@ Window {
                         text = text.slice(1)
                     }
                     appCatalog.filterText = text
+                    launcher.scheduleVisibleVersions()
                     results.currentIndex = (appCatalog.clipboardMode
                         || appCatalog.filterText.length > 0)
                         && appCatalog.count > 0 ? 0 : -1
@@ -241,6 +261,7 @@ Window {
                 currentIndex: -1
                 boundsBehavior: Flickable.StopAtBounds
                 interactive: contentHeight > height
+                onContentYChanged: launcher.scheduleVisibleVersions()
 
                 ScrollBar.vertical: ScrollBar {
                     policy: results.contentHeight > results.height

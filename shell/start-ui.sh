@@ -134,18 +134,16 @@ for ((attempt = 0; attempt < 100; attempt++)); do
 	bottom="$(window_id 'VXWM Edge Bar bottom')"
 	clock="$(window_id 'VXWM Desktop Clock')"
 	ram_widget="$(window_id 'VXWM Desktop RAM Usage')"
-	performance_widget="$(window_id 'VXWM Desktop Performance')"
 	if [[ -n "$left" && -n "$top" && -n "$right" && -n "$bottom" \
-		&& -n "$clock" && -n "$ram_widget" && -n "$performance_widget" ]]; then
+		&& -n "$clock" && -n "$ram_widget" ]]; then
 		break
 	fi
 	sleep 0.05
 done
 
 if [[ -z "${left:-}" || -z "${top:-}" || -z "${right:-}" \
-	|| -z "${bottom:-}" || -z "${clock:-}" || -z "${ram_widget:-}" \
-	|| -z "${performance_widget:-}" ]]; then
-	printf 'Could not find all VXWM bars, the clock, or the desktop widgets.\n' >&2
+	|| -z "${bottom:-}" || -z "${clock:-}" || -z "${ram_widget:-}" ]]; then
+	printf 'Could not find all VXWM bars, the clock, or the RAM widget.\n' >&2
 	if [[ -s "$state/vxwm-shell.log" ]]; then
 		cat "$state/vxwm-shell.log" >&2
 	fi
@@ -179,6 +177,5 @@ register_bar "$bottom" "0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 40, $((width - 1))" \
 # Keep the unmanaged clock below clients while leaving it fixed to the screen.
 xdotool windowlower "$clock"
 xdotool windowlower "$ram_widget"
-xdotool windowlower "$performance_widget"
 
 wait "$ui_pid"

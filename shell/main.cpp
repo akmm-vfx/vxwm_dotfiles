@@ -784,7 +784,8 @@ enum AppRole {
 	DesktopIdRole,
 	DesktopPathRole,
 	CommentRole,
-	IconNameRole
+	IconNameRole,
+	ExecutablePathRole
 };
 
 struct AppEntry {
@@ -907,6 +908,8 @@ QString cacheIcon(const QString &iconName, const QString &cacheDirectory)
 {
 	if (iconName.isEmpty())
 		return {};
+	if (!QDir().mkpath(cacheDirectory))
+		return {};
 
 	const QByteArray cacheKey = QCryptographicHash::hash(
 		(QIcon::themeName() + QLatin1Char('|') + iconName).toUtf8(),
@@ -965,27 +968,6 @@ QVector<AppEntry> readApplications(const QString &iconCache)
 				settings.value(QStringLiteral("Icon")).toString(),
 				appExecutable(settings.value(QStringLiteral("Exec")).toString()),
 				settings.value(QStringLiteral("Comment")).toString()});
-			apps.last().iconPath = cacheIcon(
-				settings.value(QStringLiteral("Icon")).toString(), iconCache);
-		}
-	}
-
-	QSet<QString> needsPackageVersion;
-	for (const AppEntry &app : apps) {
-		if (app.version.isEmpty()) {
-			needsPackageVersion.insert(QDir::cleanPath(app.desktopPath));
-			if (!app.executablePath.isEmpty())
-				needsPackageVersion.insert(QDir::cleanPath(app.executablePath));
-		}
-	}
-	const QHash<QString, QString> versions = packageVersions(needsPackageVersion);
-	for (AppEntry &app : apps) {
-		if (app.version.isEmpty()) {
-			app.version = versions.value(QDir::cleanPath(app.desktopPath));
-			if (app.version.isEmpty())
-				app.version = versions.value(QDir::cleanPath(app.executablePath));
-			if (app.version.isEmpty())
-				app.version = QStringLiteral("Version unavailable");
 		}
 	}
 
@@ -999,6 +981,24 @@ class ApplicationListModel final : public QAbstractListModel {
 public:
 	explicit ApplicationListModel(QVector<AppEntry> apps, QObject *parent = nullptr)
 		: QAbstractListModel(parent), m_apps(std::move(apps)) {}
+
+	void setIconPath(int row, const QString &path)
+	{
+		if (row < 0 || row >= m_apps.size() || m_apps[row].iconPath == path)
+			return;
+		m_apps[row].iconPath = path;
+		const QModelIndex changed = index(row, 0);
+		emit dataChanged(changed, changed, {IconRole});
+	}
+
+	void setVersion(int row, const QString &version)
+	{
+		if (row < 0 || row >= m_apps.size() || m_apps[row].version == version)
+			return;
+		m_apps[row].version = version;
+		const QModelIndex changed = index(row, 0);
+		emit dataChanged(changed, changed, {VersionRole});
+	}
 
 	void setApps(QVector<AppEntry> apps)
 	{
@@ -1026,6 +1026,7 @@ public:
 		case DesktopPathRole: return app.desktopPath;
 		case CommentRole: return app.comment;
 		case IconNameRole: return app.iconName;
+		case ExecutablePathRole: return app.executablePath;
 		default: return {};
 		}
 	}
@@ -1039,7 +1040,8 @@ public:
 			{DesktopIdRole, "desktopId"},
 			{DesktopPathRole, "desktopPath"},
 			{CommentRole, "comment"},
-			{IconNameRole, "iconName"}
+			{IconNameRole, "iconName"},
+			{ExecutablePathRole, "executablePath"}
 		};
 	}
 
@@ -1132,14 +1134,53 @@ public:
 		if (row < 0 || row >= count())
 			return {};
 		const QString version = mapToSource(index(row, 0)).data(VersionRole).toString().trimmed();
-		return version.isEmpty() ? QStringLiteral("Version unavailable") : version;
+		return version.isEmpty() ? QStringLiteral("Checking…") : version;
 	}
 
-	Q_INVOKABLE QString entryIconPath(int row) const
+	Q_INVOKABLE QString entryIconPath(int row)
 	{
 		if (row < 0 || row >= count())
 			return {};
-		return mapToSource(index(row, 0)).data(IconRole).toString();
+		const QModelIndex source = mapToSource(index(row, 0));
+		QString path = source.data(IconRole).toString();
+		if (!path.isEmpty() || m_clipboardMode)
+			return path;
+		path = cacheIcon(source.data(IconNameRole).toString(), m_iconCache);
+		if (!path.isEmpty())
+			m_appsModel->setIconPath(source.row(), path);
+		return path;
+	}
+
+	Q_INVOKABLE void resolveVersions(int firstRow, int rowCount)
+	{
+		if (m_clipboardMode || rowCount <= 0)
+			return;
+		QSet<QString> neededPaths;
+		const int lastRow = std::min(count(), firstRow + rowCount);
+		for (int row = std::max(0, firstRow); row < lastRow; ++row) {
+			const QModelIndex source = mapToSource(index(row, 0));
+			if (!source.data(VersionRole).toString().isEmpty())
+				continue;
+			for (const int role : {DesktopPathRole, ExecutablePathRole}) {
+				const QString path = source.data(role).toString();
+				if (!path.isEmpty())
+					neededPaths.insert(path);
+			}
+		}
+		if (neededPaths.isEmpty())
+			return;
+
+		const QHash<QString, QString> versions = packageVersions(neededPaths);
+		for (int row = std::max(0, firstRow); row < lastRow; ++row) {
+			const QModelIndex source = mapToSource(index(row, 0));
+			if (!source.data(VersionRole).toString().isEmpty())
+				continue;
+			QString version = versions.value(source.data(DesktopPathRole).toString());
+			if (version.isEmpty())
+				version = versions.value(source.data(ExecutablePathRole).toString());
+			m_appsModel->setVersion(source.row(), version.isEmpty()
+				? QStringLiteral("Version unavailable") : version);
+		}
 	}
 
 	Q_INVOKABLE void consumeClipboardLaunchRequests()
@@ -1454,55 +1495,32 @@ private:
 class ProcessRamMonitor final : public QObject {
 	Q_OBJECT
 	Q_PROPERTY(QVariantList topProcesses READ topProcesses NOTIFY topProcessesChanged)
-	Q_PROPERTY(QVariantList cpuProcesses READ cpuProcesses NOTIFY cpuProcessesChanged)
-	Q_PROPERTY(QVariantList gpuProcesses READ gpuProcesses NOTIFY gpuProcessesChanged)
 	Q_PROPERTY(QString memorySummary READ memorySummary NOTIFY memorySummaryChanged)
-	Q_PROPERTY(int cpuUsage READ cpuUsage NOTIFY usageChanged)
-	Q_PROPERTY(int gpuUsage READ gpuUsage NOTIFY usageChanged)
 
 public:
-	explicit ProcessRamMonitor(const QString &stateDirectory, QObject *parent = nullptr)
-		: QObject(parent), m_stateDirectory(stateDirectory)
+	explicit ProcessRamMonitor(QObject *parent = nullptr)
+		: QObject(parent)
 	{
-		connect(&m_timer, &QTimer::timeout, this, &ProcessRamMonitor::refresh);
-		connect(&m_gpuTimer, &QTimer::timeout, this, &ProcessRamMonitor::sampleGpuProcesses);
-		connect(&m_gpuSampler,
-			qOverload<int, QProcess::ExitStatus>(&QProcess::finished),
-			this, &ProcessRamMonitor::updateGpuProcesses);
-		m_timer.start(3000);
-		m_gpuTimer.start(6000);
-		sampleGpuProcesses();
-		refresh();
+		connect(&m_memoryTimer, &QTimer::timeout, this, &ProcessRamMonitor::refreshMemorySummary);
+		connect(&m_processTimer, &QTimer::timeout, this, &ProcessRamMonitor::refreshTopProcesses);
+		m_memoryTimer.start(3000);
+		m_processTimer.start(15000);
+		refreshMemorySummary();
+		refreshTopProcesses();
 	}
 
 	QVariantList topProcesses() const { return m_topProcesses; }
-	QVariantList cpuProcesses() const { return m_cpuProcesses; }
-	QVariantList gpuProcesses() const { return m_gpuProcesses; }
 	QString memorySummary() const { return m_memorySummary; }
-	int cpuUsage() const { return m_cpuUsage; }
-	int gpuUsage() const { return m_gpuUsage; }
 
 signals:
 	void topProcessesChanged();
-	void cpuProcessesChanged();
-	void gpuProcessesChanged();
 	void memorySummaryChanged();
-	void usageChanged();
 
 private slots:
-	void refresh()
+	void refreshMemorySummary()
 	{
-		const int cpuUsage = readUsage(QStringLiteral("cpu-"));
-		const int gpuUsage = readUsage(QStringLiteral("gpu-"));
-		if (cpuUsage != m_cpuUsage || gpuUsage != m_gpuUsage) {
-			m_cpuUsage = cpuUsage;
-			m_gpuUsage = gpuUsage;
-			emit usageChanged();
-		}
-
 		quint64 totalKilobytes = 0;
 		quint64 availableKilobytes = 0;
-		quint64 systemUsedKilobytes = 0;
 		const long systemPageSize = sysconf(_SC_PAGESIZE);
 		const long physicalPages = sysconf(_SC_PHYS_PAGES);
 		const long availablePages = sysconf(_SC_AVPHYS_PAGES);
@@ -1531,7 +1549,6 @@ private slots:
 			}
 		}
 		if (totalKilobytes > 0 && availableKilobytes <= totalKilobytes) {
-			systemUsedKilobytes = totalKilobytes - availableKilobytes;
 			const double usedGigabytes = static_cast<double>(totalKilobytes - availableKilobytes)
 				/ (1024.0 * 1024.0);
 			const double totalGigabytes = static_cast<double>(totalKilobytes)
@@ -1544,15 +1561,21 @@ private slots:
 				emit memorySummaryChanged();
 			}
 		}
+	}
 
-		QHash<QString, quint64> groupedPssKilobytes;
-		QHash<QString, quint64> groupedFallbackKilobytes;
-		QHash<QString, quint64> processTicks;
-		QHash<QString, QString> processNames;
+	void refreshTopProcesses()
+	{
+		struct ProcessSample {
+			QString group;
+			QString directory;
+			quint64 residentKilobytes;
+		};
+		QVector<ProcessSample> samples;
+		QHash<QString, quint64> residentByGroup;
+		const long systemPageSize = sysconf(_SC_PAGESIZE);
+		const quint64 pageSizeKiB = systemPageSize > 0
+			? static_cast<quint64>(systemPageSize / 1024) : 4;
 		const QDir procDirectory(QStringLiteral("/proc"));
-		const double elapsedSeconds = m_cpuSampleClock.isValid()
-			? static_cast<double>(m_cpuSampleClock.elapsed()) / 1000.0 : 0.0;
-		m_cpuSampleClock.start();
 		for (const QString &pid : procDirectory.entryList(QDir::Dirs | QDir::NoDotAndDotDot)) {
 			bool isPid = false;
 			pid.toLongLong(&isPid);
@@ -1570,24 +1593,6 @@ private slots:
 			}
 			if (name.isEmpty())
 				continue;
-			QFile processStat(processDirectory + QStringLiteral("/stat"));
-			if (processStat.open(QIODevice::ReadOnly)) {
-				const QByteArray statLine = processStat.readLine();
-				const qsizetype commEnd = statLine.lastIndexOf(')');
-				if (commEnd >= 0) {
-					const QList<QByteArray> fields = statLine.mid(commEnd + 2).simplified().split(' ');
-					if (fields.size() > 12) {
-						bool userOk = false;
-						bool systemOk = false;
-						const quint64 userTicks = fields.at(11).toULongLong(&userOk);
-						const quint64 systemTicks = fields.at(12).toULongLong(&systemOk);
-						if (userOk && systemOk) {
-							processTicks.insert(pid, userTicks + systemTicks);
-						processNames.insert(pid, name);
-						}
-					}
-				}
-			}
 			const QString group = name.toCaseFolded();
 			QFile statm(processDirectory + QStringLiteral("/statm"));
 			if (!statm.open(QIODevice::ReadOnly))
@@ -1600,8 +1605,26 @@ private slots:
 			if (!rssOk)
 				continue;
 			const quint64 residentKilobytes = residentPages * pageSizeKiB;
+			samples.append({group, processDirectory, residentKilobytes});
+			residentByGroup[group] += residentKilobytes;
+		}
 
-			QFile smaps(processDirectory + QStringLiteral("/smaps_rollup"));
+		QVector<QPair<QString, quint64>> residentRanking;
+		residentRanking.reserve(residentByGroup.size());
+		for (auto it = residentByGroup.cbegin(); it != residentByGroup.cend(); ++it)
+			residentRanking.append({it.key(), it.value()});
+		std::sort(residentRanking.begin(), residentRanking.end(), [](const auto &left, const auto &right) {
+			return left.second > right.second;
+		});
+		QSet<QString> candidates;
+		for (qsizetype i = 0; i < std::min<qsizetype>(12, residentRanking.size()); ++i)
+			candidates.insert(residentRanking.at(i).first);
+
+		QHash<QString, quint64> groupedKilobytes;
+		for (const ProcessSample &sample : samples) {
+			if (!candidates.contains(sample.group))
+				continue;
+			QFile smaps(sample.directory + QStringLiteral("/smaps_rollup"));
 			quint64 proportionalKilobytes = 0;
 			bool foundPss = false;
 			if (smaps.open(QIODevice::ReadOnly | QIODevice::Text)) {
@@ -1618,68 +1641,8 @@ private slots:
 					break;
 				}
 			}
-			if (foundPss)
-				groupedPssKilobytes[group] += proportionalKilobytes;
-			else
-				groupedFallbackKilobytes[group] += residentKilobytes;
-		}
-		if (elapsedSeconds > 0.0) {
-			QHash<QString, double> cpuByName;
-			QHash<QString, QString> cpuDisplayNames;
-			const double ticksPerSecond = static_cast<double>(sysconf(_SC_CLK_TCK));
-			const double processorCount = static_cast<double>(
-				std::max<long>(1, sysconf(_SC_NPROCESSORS_ONLN)));
-			for (auto it = processTicks.cbegin(); it != processTicks.cend(); ++it) {
-				auto previous = m_previousProcessTicks.constFind(it.key());
-				if (previous == m_previousProcessTicks.cend() || it.value() < previous.value())
-					continue;
-				const QString name = processNames.value(it.key());
-				const QString group = name.toCaseFolded();
-				cpuByName[group] += (static_cast<double>(it.value() - previous.value())
-					/ ticksPerSecond / elapsedSeconds / processorCount) * 100.0;
-				cpuDisplayNames.insert(group, name);
-			}
-			QVector<QPair<QString, double>> sortedCpu;
-			for (auto it = cpuByName.cbegin(); it != cpuByName.cend(); ++it)
-				sortedCpu.append({it.key(), it.value()});
-			std::sort(sortedCpu.begin(), sortedCpu.end(), [](const auto &left, const auto &right) {
-				return left.second > right.second;
-			});
-			QVariantList nextCpu;
-			for (qsizetype i = 0; i < std::min<qsizetype>(3, sortedCpu.size()); ++i) {
-				const auto &[key, usage] = sortedCpu.at(i);
-				QString displayName = cpuDisplayNames.value(key);
-				displayName[0] = displayName.at(0).toUpper();
-				nextCpu.append(QVariantMap{
-					{QStringLiteral("name"), displayName},
-					{QStringLiteral("usage"), QString::number(usage, 'f', 1) + QStringLiteral("%")}
-				});
-			}
-			if (nextCpu != m_cpuProcesses) {
-				m_cpuProcesses = std::move(nextCpu);
-				emit cpuProcessesChanged();
-			}
-		}
-		m_previousProcessTicks = std::move(processTicks);
-
-		QSet<QString> groupNames;
-		for (auto it = groupedPssKilobytes.cbegin(); it != groupedPssKilobytes.cend(); ++it)
-			groupNames.insert(it.key());
-		for (auto it = groupedFallbackKilobytes.cbegin(); it != groupedFallbackKilobytes.cend(); ++it)
-			groupNames.insert(it.key());
-		QHash<QString, quint64> groupedKilobytes;
-		quint64 groupedTotalKilobytes = 0;
-		for (const QString &name : groupNames) {
-			const quint64 value = groupedPssKilobytes.value(name)
-				+ groupedFallbackKilobytes.value(name);
-			groupedKilobytes.insert(name, value);
-			groupedTotalKilobytes += value;
-		}
-		if (systemUsedKilobytes > 0 && groupedTotalKilobytes > systemUsedKilobytes) {
-			const double scale = static_cast<double>(systemUsedKilobytes)
-				/ static_cast<double>(groupedTotalKilobytes);
-			for (auto it = groupedKilobytes.begin(); it != groupedKilobytes.end(); ++it)
-				it.value() = static_cast<quint64>(static_cast<double>(it.value()) * scale);
+			groupedKilobytes[sample.group] += foundPss
+				? proportionalKilobytes : sample.residentKilobytes;
 		}
 
 		QVector<QPair<QString, quint64>> sorted;
@@ -1707,107 +1670,12 @@ private slots:
 		emit topProcessesChanged();
 	}
 
-	void sampleGpuProcesses()
-	{
-		if (m_gpuSampler.state() != QProcess::NotRunning)
-			return;
-		QString executable = QStandardPaths::findExecutable(QStringLiteral("nvidia-smi"));
-		if (executable.isEmpty())
-			executable = QStringLiteral("/usr/sbin/nvidia-smi");
-		m_gpuSampler.start(executable,
-			{QStringLiteral("pmon"), QStringLiteral("-c"), QStringLiteral("1"),
-			 QStringLiteral("-s"), QStringLiteral("um")});
-	}
-
-	void updateGpuProcesses(int exitCode, QProcess::ExitStatus status)
-	{
-		QVariantList nextGpu;
-		if (exitCode == 0 && status == QProcess::NormalExit) {
-			QHash<QString, double> usageByApp;
-			QHash<QString, double> memoryByApp;
-			QHash<QString, QString> nameByApp;
-			const QStringList lines = QString::fromLocal8Bit(
-				m_gpuSampler.readAllStandardOutput()).split(QLatin1Char('\n'));
-			for (const QString &line : lines) {
-				const QStringList fields = line.simplified().split(QLatin1Char(' '));
-				if (fields.size() < 5 || fields.first().startsWith(QLatin1Char('#')))
-					continue;
-				bool pidOk = false;
-				const qint64 pid = fields.at(1).toLongLong(&pidOk);
-				bool usageOk = false;
-				double usage = fields.at(3).toDouble(&usageOk);
-				bool memoryOk = false;
-				const double gpuMemory = fields.size() > 9
-					? fields.at(9).toDouble(&memoryOk) : 0.0;
-				if (!pidOk || ((!usageOk || usage < 0.0) && (!memoryOk || gpuMemory <= 0.0)))
-					continue;
-				if (!usageOk)
-					usage = 0.0;
-				QString name = QFileInfo(QStringLiteral("/proc/%1/exe").arg(pid)).symLinkTarget();
-				name = QFileInfo(name).fileName();
-				if (name.isEmpty()) {
-					QFile comm(QStringLiteral("/proc/%1/comm").arg(pid));
-					if (comm.open(QIODevice::ReadOnly))
-						name = QString::fromLocal8Bit(comm.readAll()).trimmed();
-				}
-				if (name.isEmpty())
-					name = fields.last();
-				name.remove(QStringLiteral(" (deleted)"));
-				const QString group = name.toCaseFolded();
-				usageByApp[group] += usage;
-				if (memoryOk)
-					memoryByApp[group] += gpuMemory;
-				nameByApp.insert(group, name);
-			}
-
-			QVector<QPair<QString, double>> sortedGpu;
-			for (auto it = usageByApp.cbegin(); it != usageByApp.cend(); ++it)
-				sortedGpu.append({it.key(), it.value()});
-			std::sort(sortedGpu.begin(), sortedGpu.end(), [&memoryByApp](const auto &left, const auto &right) {
-				if (left.second != right.second)
-					return left.second > right.second;
-				return memoryByApp.value(left.first) > memoryByApp.value(right.first);
-			});
-			for (qsizetype i = 0; i < std::min<qsizetype>(3, sortedGpu.size()); ++i) {
-				const auto &[key, usage] = sortedGpu.at(i);
-				QString displayName = nameByApp.value(key);
-				displayName[0] = displayName.at(0).toUpper();
-				nextGpu.append(QVariantMap{
-					{QStringLiteral("name"), displayName},
-					{QStringLiteral("usage"), QString::number(usage, 'f', 1) + QStringLiteral("%")}
-				});
-			}
-		}
-		if (nextGpu != m_gpuProcesses) {
-			m_gpuProcesses = std::move(nextGpu);
-			emit gpuProcessesChanged();
-		}
-	}
 
 private:
-	int readUsage(const QString &prefix) const
-	{
-		const QStringList markers = QDir(m_stateDirectory).entryList(
-			QStringList{prefix + QLatin1Char('*')}, QDir::Files, QDir::Name);
-		if (markers.isEmpty())
-			return 0;
-		bool ok = false;
-		const int value = markers.constLast().mid(prefix.size()).toInt(&ok);
-		return ok ? std::clamp(value, 0, 100) : 0;
-	}
-
-	QTimer m_timer;
-	QTimer m_gpuTimer;
-	QProcess m_gpuSampler;
-	QElapsedTimer m_cpuSampleClock;
-	QString m_stateDirectory;
+	QTimer m_memoryTimer;
+	QTimer m_processTimer;
 	QVariantList m_topProcesses;
-	QVariantList m_cpuProcesses;
-	QVariantList m_gpuProcesses;
-	QHash<QString, quint64> m_previousProcessTicks;
 	QString m_memorySummary = QStringLiteral("-- / -- GB");
-	int m_cpuUsage = 0;
-	int m_gpuUsage = 0;
 };
 
 int main(int argc, char **argv)
@@ -1834,7 +1702,7 @@ int main(int argc, char **argv)
 	NotificationServer notifications;
 	TrayController trayController;
 	WindowSwitcherController windowSwitcher(stateDirectory);
-	ProcessRamMonitor processRamMonitor(stateDirectory);
+	ProcessRamMonitor processRamMonitor;
 	if (!notifications.registerOnSessionBus())
 		qWarning() << "Could not register VXWM notification service:" << QDBusConnection::sessionBus().lastError().message();
 	QQmlApplicationEngine engine;

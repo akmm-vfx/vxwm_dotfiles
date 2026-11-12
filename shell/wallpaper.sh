@@ -9,23 +9,45 @@ update_palette() {
 	local extension="${file##*.}"
 	local source="$file"
 	local frame="$root/shell/.matugen-frame-$$.png"
+	local cache_file="$root/shell/workspace-state/matugen-wallpaper-cache"
+	local signature
+	local cached_signature=""
+	local outputs=(Matugen.colors MatugenColors.qml accent-color kitty-matugen.conf flameshot.ini)
+	local valid_cache=true
+	mkdir -p -- "${cache_file%/*}"
+	signature="$(printf '%s\n' "$file" "$extension"; stat -Lc '%n|%s|%Y' -- "$file" "$root/shell/matugen.toml" | sort)"
+	signature="$(printf '%s' "$signature" | sha256sum | cut -d ' ' -f 1)"
+	[[ -r "$cache_file" ]] && read -r cached_signature < "$cache_file" || true
+	for output in "${outputs[@]}"; do
+		[[ -s "$root/shell/$output" ]] || valid_cache=false
+	done
 
-	case "${extension,,}" in
-		mp4|mkv|webm|mov|avi|m4v|ogv|mpg|mpeg)
-			if ! ffmpeg -hide_banner -loglevel error -ss 1 -i "$file" -frames:v 1 \
-				-vf 'scale=min(640\,iw):-2' -y "$frame"; then
+	if [[ "$cached_signature" != "$signature" || "$valid_cache" != true ]]; then
+		case "${extension,,}" in
+			mp4|mkv|webm|mov|avi|m4v|ogv|mpg|mpeg)
+				if ! ffmpeg -hide_banner -loglevel error -ss 1 -i "$file" -frames:v 1 \
+					-vf 'scale=min(640\,iw):-2' -y "$frame"; then
+					rm -f -- "$frame"
+					ffmpeg -hide_banner -loglevel error -i "$file" -frames:v 1 \
+						-vf 'scale=min(640\,iw):-2' -y "$frame"
+				fi
+				source="$frame"
+				;;
+		esac
+
+		if ! matugen image "$source" --config "$root/shell/matugen.toml" \
+			--prefer=less-saturation --mode=dark --quiet; then
+			rm -f -- "$frame"
+			return 1
+		fi
+		for output in "${outputs[@]}"; do
+			[[ -s "$root/shell/$output" ]] || {
 				rm -f -- "$frame"
-				ffmpeg -hide_banner -loglevel error -i "$file" -frames:v 1 \
-					-vf 'scale=min(640\,iw):-2' -y "$frame"
-			fi
-			source="$frame"
-			;;
-	esac
-
-	if ! matugen image "$source" --config "$root/shell/matugen.toml" \
-		--prefer=less-saturation --mode=dark --quiet; then
-		rm -f -- "$frame"
-		return 1
+				return 1
+			}
+		done
+		printf '%s\n' "$signature" > "$cache_file.tmp"
+		mv -f -- "$cache_file.tmp" "$cache_file"
 	fi
 	rm -f -- "$frame"
 	local accent_hex
