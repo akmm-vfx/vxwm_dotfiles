@@ -51,6 +51,7 @@ Window {
         property string totalUsage
         property var processes
         property string emptyText
+        property int valueColumnWidth: 56
         property int rows: Math.max(1, processes.length)
         height: 17 + 1 + rows * 17 + 4 * (rows + 1)
         spacing: 4
@@ -111,23 +112,29 @@ Window {
                 ? section.processes
                 : [{ name: section.emptyText, usage: "" }]
 
-            delegate: Row {
+            delegate: Item {
                 required property var modelData
                 width: section.width
                 height: 17
 
                 Text {
                     text: modelData.name
+                    anchors.left: parent.left
+                    anchors.right: usageText.left
+                    anchors.rightMargin: 8
+                    anchors.verticalCenter: parent.verticalCenter
                     color: performanceWidget.textColor
                     font.family: "Google Sans Flex"
                     font.pixelSize: 12
                     elide: Text.ElideRight
-                    width: parent.width - usageText.implicitWidth - 8
                 }
 
                 Text {
                     id: usageText
                     text: modelData.usage
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: section.valueColumnWidth
                     color: performanceWidget.textColor
                     font.family: "Google Sans Flex"
                     font.pixelSize: 12
