@@ -23,7 +23,7 @@ static MAYBE_CONST char *colors[][3] = {
        [SchemeSel]  = { selfgcolor,  selbgcolor,  selbordercolor  },
 };
 
-#define CENTER_NEW_FLOATING_WINDOWS 0 // so, basically, it does what it says. (make 0 to turn off)
+#define CENTER_NEW_FLOATING_WINDOWS 1 // so, basically, it does what it says. (make 0 to turn off)
 #define NEW_FLOATING_WINDOWS_APPEAR_UNDER_CURSOR 0 // so, basically, it does what it says. (make 0 to turn off) 
 
 #if GAPS
@@ -52,10 +52,10 @@ static const int right_sidepad = 0;        /* right horizontal padding of bar */
 #endif
 
 /* tagging */
-static const char *tags[] = { "1", "2", "3", "4", "5", "6", "7", "8", "9" };
+static const char *tags[] = { "1", "2", "3", "4", "5" };
 
 #if OCCUPIED_TAGS_DECORATION
-static const char *occupiedtags[] = { "1+", "2+", "3+", "4+", "5+", "6+", "7+", "8+", "9+" };
+static const char *occupiedtags[] = { "1+", "2+", "3+", "4+", "5+" };
 #endif
 
 #if INFINITE_TAGS
@@ -140,7 +140,7 @@ static const Key keys[] = {
 	{ MODKEY,                       XK_j,      focusstack,     {.i = +1 } },
 	{ MODKEY,                       XK_k,      focusstack,     {.i = -1 } },
 	{ MODKEY,                       XK_i,      incnmaster,     {.i = +1 } },
-	{ MODKEY,                       XK_d,      incnmaster,     {.i = -1 } },
+	/* Super+d is handled by sxhkd for the QML launcher. */
 	{ MODKEY,                       XK_h,      setmfact,       {.f = -0.05} },
 	{ MODKEY,                       XK_l,      setmfact,       {.f = +0.05} },
 	{ MODKEY,                       XK_Return, swapmaster,     {0} },
@@ -162,10 +162,6 @@ static const Key keys[] = {
 	TAGKEYS(                        XK_3,                      2)
 	TAGKEYS(                        XK_4,                      3)
 	TAGKEYS(                        XK_5,                      4)
-	TAGKEYS(                        XK_6,                      5)
-	TAGKEYS(                        XK_7,                      6)
-	TAGKEYS(                        XK_8,                      7)
-	TAGKEYS(                        XK_9,                      8)
 	{ MODKEY|ShiftMask,             XK_q,      quit,           {0} },
 #if XRDB
   { MODKEY,                       XK_F5,     xrdb,           {.v = NULL } },

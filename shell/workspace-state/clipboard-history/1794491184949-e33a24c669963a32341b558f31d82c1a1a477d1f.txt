@@ -1,0 +1,1 @@
+pkill -TERM -f '^bash /home/arkar/vxwm/shell/start-ui.sh$' 2>/dev/null || true; pkill -TERM -x vxwm-shell 2>/dev/null || true; sleep 1; ~/vxwm/shell/start-ui.sh

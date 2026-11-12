@@ -1,0 +1,127 @@
+[Colors:Button]
+BackgroundAlternate={{ colors.surface_container_low.dark.red }},{{ colors.surface_container_low.dark.green }},{{ colors.surface_container_low.dark.blue }}
+BackgroundNormal={{ colors.surface_container_high.dark.red }},{{ colors.surface_container_high.dark.green }},{{ colors.surface_container_high.dark.blue }}
+DecorationFocus={{ colors.primary.dark.hex }}
+DecorationHover={{ colors.primary.dark.hex }}
+ForegroundActive={{ colors.primary.dark.hex }}
+ForegroundInactive={{ colors.on_surface_variant.dark.hex }}
+ForegroundLink={{ colors.primary.dark.hex }}
+ForegroundNegative={{ colors.error.dark.hex }}
+ForegroundNeutral={{ colors.secondary.dark.hex }}
+ForegroundNormal={{ colors.on_surface.dark.hex }}
+ForegroundPositive={{ colors.tertiary.dark.hex }}
+ForegroundVisited={{ colors.tertiary.dark.hex }}
+
+[Colors:Complementary]
+BackgroundAlternate={{ colors.surface_container_low.dark.red }},{{ colors.surface_container_low.dark.green }},{{ colors.surface_container_low.dark.blue }}
+BackgroundNormal={{ colors.surface_container.dark.red }},{{ colors.surface_container.dark.green }},{{ colors.surface_container.dark.blue }}
+DecorationFocus={{ colors.primary.dark.hex }}
+DecorationHover={{ colors.primary.dark.hex }}
+ForegroundActive={{ colors.primary.dark.hex }}
+ForegroundInactive={{ colors.on_surface_variant.dark.hex }}
+ForegroundLink={{ colors.primary.dark.hex }}
+ForegroundNegative={{ colors.error.dark.hex }}
+ForegroundNeutral={{ colors.secondary.dark.hex }}
+ForegroundNormal={{ colors.on_surface.dark.hex }}
+ForegroundPositive={{ colors.tertiary.dark.hex }}
+ForegroundVisited={{ colors.tertiary.dark.hex }}
+
+[Colors:Header]
+BackgroundAlternate={{ colors.surface_container_low.dark.red }},{{ colors.surface_container_low.dark.green }},{{ colors.surface_container_low.dark.blue }}
+BackgroundNormal={{ colors.surface_container_high.dark.red }},{{ colors.surface_container_high.dark.green }},{{ colors.surface_container_high.dark.blue }}
+DecorationFocus={{ colors.primary.dark.hex }}
+DecorationHover={{ colors.primary.dark.hex }}
+ForegroundActive={{ colors.primary.dark.hex }}
+ForegroundInactive={{ colors.on_surface_variant.dark.hex }}
+ForegroundLink={{ colors.primary.dark.hex }}
+ForegroundNegative={{ colors.error.dark.hex }}
+ForegroundNeutral={{ colors.secondary.dark.hex }}
+ForegroundNormal={{ colors.on_surface.dark.hex }}
+ForegroundPositive={{ colors.tertiary.dark.hex }}
+ForegroundVisited={{ colors.tertiary.dark.hex }}
+
+[Colors:Header][Inactive]
+BackgroundAlternate={{ colors.surface_container_low.dark.red }},{{ colors.surface_container_low.dark.green }},{{ colors.surface_container_low.dark.blue }}
+BackgroundNormal={{ colors.surface_container.dark.red }},{{ colors.surface_container.dark.green }},{{ colors.surface_container.dark.blue }}
+DecorationFocus={{ colors.primary.dark.hex }}
+DecorationHover={{ colors.primary.dark.hex }}
+ForegroundActive={{ colors.primary.dark.hex }}
+ForegroundInactive={{ colors.on_surface_variant.dark.hex }}
+ForegroundLink={{ colors.primary.dark.hex }}
+ForegroundNegative={{ colors.error.dark.hex }}
+ForegroundNeutral={{ colors.secondary.dark.hex }}
+ForegroundNormal={{ colors.on_surface.dark.hex }}
+ForegroundPositive={{ colors.tertiary.dark.hex }}
+ForegroundVisited={{ colors.tertiary.dark.hex }}
+
+[Colors:Selection]
+BackgroundAlternate={{ colors.primary_container.dark.hex }}
+BackgroundNormal={{ colors.primary.dark.hex }}
+DecorationFocus={{ colors.primary.dark.hex }}
+DecorationHover={{ colors.primary.dark.hex }}
+ForegroundActive={{ colors.on_primary.dark.hex }}
+ForegroundInactive={{ colors.on_primary.dark.hex }}
+ForegroundLink={{ colors.on_primary.dark.hex }}
+ForegroundNegative={{ colors.error.dark.hex }}
+ForegroundNeutral={{ colors.on_primary.dark.hex }}
+ForegroundNormal={{ colors.on_primary.dark.hex }}
+ForegroundPositive={{ colors.on_primary.dark.hex }}
+ForegroundVisited={{ colors.on_primary.dark.hex }}
+
+[Colors:Tooltip]
+BackgroundAlternate={{ colors.surface_container_low.dark.red }},{{ colors.surface_container_low.dark.green }},{{ colors.surface_container_low.dark.blue }}
+BackgroundNormal={{ colors.surface_container_high.dark.red }},{{ colors.surface_container_high.dark.green }},{{ colors.surface_container_high.dark.blue }}
+DecorationFocus={{ colors.primary.dark.hex }}
+DecorationHover={{ colors.primary.dark.hex }}
+ForegroundActive={{ colors.primary.dark.hex }}
+ForegroundInactive={{ colors.on_surface_variant.dark.hex }}
+ForegroundLink={{ colors.primary.dark.hex }}
+ForegroundNegative={{ colors.error.dark.hex }}
+ForegroundNeutral={{ colors.secondary.dark.hex }}
+ForegroundNormal={{ colors.on_surface.dark.hex }}
+ForegroundPositive={{ colors.tertiary.dark.hex }}
+ForegroundVisited={{ colors.tertiary.dark.hex }}
+
+[Colors:View]
+BackgroundAlternate={{ colors.surface_container_low.dark.red }},{{ colors.surface_container_low.dark.green }},{{ colors.surface_container_low.dark.blue }}
+BackgroundNormal={{ colors.surface_container.dark.red }},{{ colors.surface_container.dark.green }},{{ colors.surface_container.dark.blue }}
+DecorationFocus={{ colors.primary.dark.hex }}
+DecorationHover={{ colors.primary.dark.hex }}
+ForegroundActive={{ colors.primary.dark.hex }}
+ForegroundInactive={{ colors.on_surface_variant.dark.hex }}
+ForegroundLink={{ colors.primary.dark.hex }}
+ForegroundNegative={{ colors.error.dark.hex }}
+ForegroundNeutral={{ colors.secondary.dark.hex }}
+ForegroundNormal={{ colors.on_surface.dark.hex }}
+ForegroundPositive={{ colors.tertiary.dark.hex }}
+ForegroundVisited={{ colors.tertiary.dark.hex }}
+
+[Colors:Window]
+BackgroundAlternate={{ colors.surface_container_low.dark.red }},{{ colors.surface_container_low.dark.green }},{{ colors.surface_container_low.dark.blue }}
+BackgroundNormal={{ colors.surface_container.dark.red }},{{ colors.surface_container.dark.green }},{{ colors.surface_container.dark.blue }}
+DecorationFocus={{ colors.primary.dark.hex }}
+DecorationHover={{ colors.primary.dark.hex }}
+ForegroundActive={{ colors.primary.dark.hex }}
+ForegroundInactive={{ colors.on_surface_variant.dark.hex }}
+ForegroundLink={{ colors.primary.dark.hex }}
+ForegroundNegative={{ colors.error.dark.hex }}
+ForegroundNeutral={{ colors.secondary.dark.hex }}
+ForegroundNormal={{ colors.on_surface.dark.hex }}
+ForegroundPositive={{ colors.tertiary.dark.hex }}
+ForegroundVisited={{ colors.tertiary.dark.hex }}
+
+[General]
+ColorScheme=Matugen
+Name=Matugen
+shadeSortColumn=true
+
+[KDE]
+contrast=4
+
+[WM]
+activeBackground={{ colors.surface_container.dark.red }},{{ colors.surface_container.dark.green }},{{ colors.surface_container.dark.blue }}
+activeBlend={{ colors.on_surface.dark.hex }}
+activeForeground={{ colors.primary.dark.hex }}
+inactiveBackground={{ colors.surface.dark.red }},{{ colors.surface.dark.green }},{{ colors.surface.dark.blue }}
+inactiveBlend={{ colors.on_surface_variant.dark.hex }}
+inactiveForeground={{ colors.on_surface_variant.dark.hex }}

@@ -1,0 +1,1 @@
+I’ll make the denominator use the full app or clipboard history count, independent of the search text. The shown count can still reflect the current visible results.

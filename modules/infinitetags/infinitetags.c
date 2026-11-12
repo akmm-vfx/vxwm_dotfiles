@@ -17,6 +17,7 @@ homecanvas(const Arg *arg) {
             c->x -= cx;
             c->y -= cy;
             XMoveWindow(dpy, c->win, c->x, c->y);
+            updateclientdecorations(c);
         }
     }
     
@@ -57,6 +58,7 @@ movecanvas(const Arg *arg)
 			c->x -= dx;
 			c->y -= dy;
 			XMoveWindow(dpy, c->win, c->x, c->y);
+			updateclientdecorations(c);
 		}
 	}
 
@@ -130,6 +132,7 @@ movecanvasmouse(const Arg *arg) {
                     c->x += dx;
                     c->y += dy;
                     XMoveWindow(dpy, c->win, c->x, c->y);
+                    updateclientdecorations(c);
                 }
             }
 
@@ -220,6 +223,7 @@ centerwindow(const Arg *arg)
       tmp->x += dx;
       tmp->y += dy;
       XMoveWindow(dpy, tmp->win, tmp->x, tmp->y);
+      updateclientdecorations(tmp);
     }
   }
 
@@ -235,6 +239,8 @@ pinwindow(const Arg *arg) {
   if (!c)
     return;
   c->is_pinned = !c->is_pinned;
+  updateclientswitchstate(c);
+  updateclientdecorations(c);
   restack(selmon);
   drawbar(selmon);
 }

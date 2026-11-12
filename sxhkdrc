@@ -1,0 +1,38 @@
+super + d
+	"$HOME/vxwm/shell/launcher-toggle.sh"
+
+alt + Tab
+	bash "$HOME/vxwm/shell/window-switcher.sh" press
+
+super + v
+	"$HOME/vxwm/shell/launcher-toggle.sh" clipboard
+
+super + Escape
+	"$HOME/vxwm/shell/power-menu-toggle.sh"
+
+super + Delete
+	"$HOME/vxwm/shell/lock-screen.sh"
+
+super + shift + s
+	"$HOME/vxwm/shell/screenshot-tool"
+
+super + shift + c
+	"$HOME/vxwm/shell/color-picker.sh"
+
+super + shift + w
+	"$HOME/vxwm/shell/wallpaper.sh" --choose
+
+XF86AudioRaiseVolume
+	wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+
+
+XF86AudioLowerVolume
+	wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-
+
+XF86AudioMute
+	wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle
+
+XF86MonBrightnessUp
+	"$HOME/vxwm/shell/brightness-step.sh" up
+
+XF86MonBrightnessDown
+	"$HOME/vxwm/shell/brightness-step.sh" down

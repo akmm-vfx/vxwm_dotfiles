@@ -13,6 +13,9 @@ From this moment, i'll try to comment the code and also make it more readable.
 // Config is in config.h
 
 #include <errno.h>
+#include <ctype.h>
+#include <fcntl.h>
+#include <limits.h>
 #include <locale.h>
 #include <signal.h>
 #include <stdarg.h>
@@ -28,6 +31,8 @@ From this moment, i'll try to comment the code and also make it more readable.
 #include <X11/Xlib.h>
 #include <X11/Xproto.h>
 #include <X11/Xutil.h>
+#include <X11/extensions/Xrender.h>
+#include <X11/extensions/shape.h>
 #ifdef XINERAMA
 #include <X11/extensions/Xinerama.h>
 #endif /* XINERAMA */
@@ -133,17 +138,22 @@ struct Client {
 	int bw, oldbw;
 	unsigned int tags;
 	int isfixed, isfloating, isurgent, neverfocus, oldstate, isfullscreen;
+	int isflameshot;
 	int isminimized, ismaximized;
 	int max_restore_x, max_restore_y, max_restore_w, max_restore_h;
 	Client *next;
 	Client *snext;
 	Monitor *mon;
 	Window win;
+	Window pindec;
+	XftDraw *pinft;
+	int pin_generation, drawn_pinned, pin_mapped;
 #if INFINITE_TAGS
   int saved_cx, saved_cy;
   int saved_cw, saved_ch;
   int was_on_canvas;
-  int is_pinned;
+	int is_pinned;
+	int is_shell;
 #endif
 #if WINDOWMAP
   int ismapped;
@@ -273,6 +283,7 @@ static void restack(Monitor *m);
 static void run(void);
 static void scan(void);
 static int sendevent(Client *c, Atom proto);
+void updateclientswitchstate(Client *c);
 static void sendmon(Client *c, Monitor *m);
 static void setclientstate(Client *c, long state);
 static void setfocus(Client *c);
@@ -301,6 +312,11 @@ static void updatenumlockmask(void);
 static void updatesizehints(Client *c);
 static void updatestatus(void);
 static void updatetitle(Client *c);
+static void updateclientclass(Client *c);
+static void updateclientdecorations(Client *c);
+static void reloadpincolor(void);
+static void raisestayonTopwindows(void);
+static void raiseclientdecorations(Monitor *m);
 static void updatewindowtype(Client *c);
 static void updatewmhints(Client *c);
 static void view(const Arg *arg);
@@ -354,6 +370,17 @@ static Display *dpy;
 static Drw *drw;
 static Monitor *mons, *selmon;
 static Window root, wmcheckwin;
+static Atom themeatom;
+static Atom aboveatom;
+static Atom switchwindowatom, clientstateatom;
+static Visual *decvisual;
+static Colormap deccolormap;
+static int decdepth;
+static XftFont *pinfont;
+static XftColor pincolor;
+static int pincolorok;
+static int decgeneration;
+static int shapeavailable;
 
 /* configuration, allows nested code to access above variables */
 #include "config.h"
@@ -378,6 +405,8 @@ applyrules(Client *c)
 	XGetClassHint(dpy, c->win, &ch);
 	class    = ch.res_class ? ch.res_class : broken;
 	instance = ch.res_name  ? ch.res_name  : broken;
+	c->is_shell = !strcasecmp(class, "vxwm-shell") || !strcasecmp(instance, "vxwm-shell");
+	c->isflameshot = strcmp(class, "flameshot") == 0;
 
 	for (i = 0; i < LENGTH(rules); i++) {
 		r = &rules[i];
@@ -609,6 +638,12 @@ cleanup(void)
 	for (i = 0; i < LENGTH(colors); i++)
 		drw_scm_free(drw, scheme[i], 3);
 	free(scheme);
+	if (pincolorok)
+		XftColorFree(dpy, decvisual, deccolormap, &pincolor);
+	if (pinfont)
+		XftFontClose(dpy, pinfont);
+	if (deccolormap)
+		XFreeColormap(dpy, deccolormap);
 	XDestroyWindow(dpy, wmcheckwin);
 	drw_free(drw);
 	XSync(dpy, False);
@@ -644,7 +679,21 @@ clientmessage(XEvent *e)
 
 	if (!c)
 		return;
-	if (cme->message_type == netatom[NetWMState]) {
+	if (cme->message_type == switchwindowatom) {
+		Arg viewarg = { .ui = c->tags };
+		Monitor *targetmon = c->mon;
+		selmon = targetmon;
+		c->isminimized = 0;
+		updateclientswitchstate(c);
+		if (!(c->tags & targetmon->tagset[targetmon->seltags]))
+			view(&viewarg);
+		arrange(targetmon);
+		focus(c);
+#if INFINITE_TAGS
+		centerwindow(NULL);
+#endif
+		restack(targetmon);
+	} else if (cme->message_type == netatom[NetWMState]) {
 		if (cme->data.l[1] == netatom[NetWMFullscreen]
 		|| cme->data.l[2] == netatom[NetWMFullscreen])
 			setfullscreen(c, (cme->data.l[0] == 1 /* _NET_WM_STATE_ADD    */
@@ -672,6 +721,7 @@ configure(Client *c)
 	ce.above = None;
 	ce.override_redirect = False;
 	XSendEvent(dpy, c->win, False, StructureNotifyMask, (XEvent *)&ce);
+	updateclientdecorations(c);
 }
 
 void
@@ -755,6 +805,8 @@ configurerequest(XEvent *e)
 		wc.stack_mode = ev->detail;
 		XConfigureWindow(dpy, ev->window, ev->value_mask, &wc);
 	}
+	if (c)
+		updateclientdecorations(c);
 	XSync(dpy, False);
 }
 
@@ -982,6 +1034,7 @@ expose(XEvent *e)
 void
 focus(Client *c)
 {
+	Client *previous = selmon->sel;
 	if (!c || !ISVISIBLE(c))
 		for (c = selmon->stack; c && !ISVISIBLE(c); c = c->snext);
 	if (selmon->sel && selmon->sel != c)
@@ -1001,6 +1054,10 @@ focus(Client *c)
 		XDeleteProperty(dpy, root, netatom[NetActiveWindow]);
 	}
 	selmon->sel = c;
+	if (previous && previous != c)
+		updateclientswitchstate(previous);
+	if (c)
+		updateclientswitchstate(c);
 	drawbars();
 }
 
@@ -1292,6 +1349,7 @@ manage(Window w, XWindowAttributes *wa)
 	if (XGetTransientForHint(dpy, w, &trans) && (t = wintoclient(trans))) {
 		c->mon = t->mon;
 		c->tags = t->tags;
+		updateclientclass(c);
 	} else {
 		c->mon = selmon;
 		applyrules(c);
@@ -1343,6 +1401,7 @@ manage(Window w, XWindowAttributes *wa)
 		(unsigned char *) &(c->win), 1);
 	XMoveResizeWindow(dpy, c->win, c->x + 2 * sw, c->y, c->w, c->h); /* some windows require this */
 	setclientstate(c, NormalState);
+	updateclientswitchstate(c);
 	if (c->mon == selmon)
 		unfocus(selmon->sel, 0);
 	c->mon->sel = c;
@@ -1566,13 +1625,24 @@ propertynotify(XEvent *e)
   }
 #endif
 
-	if ((ev->window == root) && (ev->atom == XA_WM_NAME))
+	if (ev->window == root && ev->atom == themeatom) {
+		Monitor *m;
+		Client *client;
+		reloadpincolor();
+		for (m = mons; m; m = m->next)
+			for (client = m->clients; client; client = client->next)
+				updateclientdecorations(client);
+	} else if ((ev->window == root) && (ev->atom == XA_WM_NAME))
 		updatestatus();
 	else if (ev->state == PropertyDelete)
 		return; /* ignore */
 	else if ((c = wintoclient(ev->window))) {
 		switch(ev->atom) {
 		default: break;
+		case XA_WM_CLASS:
+			updateclientclass(c);
+			updateclientdecorations(c);
+			break;
 		case XA_WM_TRANSIENT_FOR:
 			if (!c->isfloating && (XGetTransientForHint(dpy, c->win, &trans)) &&
 				(c->isfloating = (wintoclient(trans)) != NULL))
@@ -1730,8 +1800,19 @@ restack(Monitor *m)
 #endif
 
 	drawbar(m);
-	if (!m->sel)
+	for (c = m->stack; c; c = c->snext)
+		if (c->isflameshot && c->isfullscreen && ISVISIBLE(c)) {
+			XRaiseWindow(dpy, c->win);
+			raiseclientdecorations(m);
+			raisestayonTopwindows();
+			XSync(dpy, False);
+			return;
+		}
+	if (!m->sel) {
+		raiseclientdecorations(m);
+		raisestayonTopwindows();
 		return;
+	}
 	if (m->sel->isfloating || !m->lt[m->sellt]->arrange)
 		XRaiseWindow(dpy, m->sel->win);
 	if (m->lt[m->sellt]->arrange) {
@@ -1745,8 +1826,15 @@ restack(Monitor *m)
 	}
 #if BAR_ALWAYS_ON_TOP 
   else {
-    if (m->sel && m->sel->isfullscreen)
+    if (m->sel && m->sel->isfullscreen) {
+#if EXTERNAL_BARS && EXTERNAL_BARS_ALWAYS_ON_TOP
+      for (exb = ebarstruts; exb; exb = exb->next)
+        XRaiseWindow(dpy, exb->win);
+#endif
+	  raiseclientdecorations(m);
+	  raisestayonTopwindows();
       return;
+    }
     wc.stack_mode = Below;
     wc.sibling = m->barwin;
     for (c = m->stack; c; c = c->snext) {
@@ -1769,8 +1857,57 @@ restack(Monitor *m)
 #if BAR_ALWAYS_ON_TOP
   }
 #endif
+	raiseclientdecorations(m);
+	raisestayonTopwindows();
 	XSync(dpy, False);
 	while (XCheckMaskEvent(dpy, EnterWindowMask, &ev));
+}
+
+static void
+raiseclientdecorations(Monitor *m)
+{
+	Client *c;
+	XWindowChanges changes;
+	for (c = m->stack; c; c = c->snext) {
+		if (!ISVISIBLE(c))
+			continue;
+#if INFINITE_TAGS
+		if (c->is_pinned && c->pindec) {
+			changes.sibling = c->win;
+			changes.stack_mode = Above;
+			XConfigureWindow(dpy, c->pindec, CWSibling|CWStackMode, &changes);
+		}
+#endif
+	}
+}
+
+static void
+raisestayonTopwindows(void)
+{
+	Window root_return, parent, *children = NULL;
+	unsigned int nchildren, i;
+	if (!XQueryTree(dpy, root, &root_return, &parent, &children, &nchildren))
+		return;
+	for (i = 0; i < nchildren; i++) {
+		Atom actual;
+		int format;
+		unsigned long nitems, remaining;
+		unsigned char *data = NULL;
+		unsigned long j;
+		if (XGetWindowProperty(dpy, children[i], netatom[NetWMState], 0, 32,
+			False, XA_ATOM, &actual, &format, &nitems, &remaining, &data) == Success
+			&& actual == XA_ATOM && format == 32) {
+			for (j = 0; j < nitems; j++)
+				if (((Atom *)data)[j] == aboveatom) {
+					XRaiseWindow(dpy, children[i]);
+					break;
+				}
+		}
+		if (data)
+			XFree(data);
+	}
+	if (children)
+		XFree(children);
 }
 
 void
@@ -1854,6 +1991,16 @@ setclientstate(Client *c, long state)
 		PropModeReplace, (unsigned char *)data, 2);
 }
 
+void
+updateclientswitchstate(Client *c)
+{
+	unsigned long state = (c->is_pinned ? 1UL : 0UL) |
+		(c->isminimized ? 2UL : 0UL) |
+		(c->mon && c->mon->sel == c ? 4UL : 0UL);
+	XChangeProperty(dpy, c->win, clientstateatom, XA_CARDINAL, 32,
+		PropModeReplace, (unsigned char *)&state, 1);
+}
+
 int
 sendevent(Client *c, Atom proto)
 {
@@ -1918,6 +2065,7 @@ minimizeclient(const Arg *arg)
 	if (!c || c->isfullscreen || c->isminimized)
 		return;
 	c->isminimized = 1;
+	updateclientswitchstate(c);
 	focus(NULL);
 	arrange(c->mon);
 }
@@ -1940,6 +2088,7 @@ restoreminimized(const Arg *arg)
 	if (!c)
 		return;
 	c->isminimized = 0;
+	updateclientswitchstate(c);
 	if (!(c->tags & c->mon->tagset[c->mon->seltags])) {
 		viewarg.ui = c->tags;
 		view(&viewarg);
@@ -2035,6 +2184,8 @@ setup(void)
 	XSetWindowAttributes wa;
 	Atom utf8string;
 	struct sigaction sa;
+	XVisualInfo vtemplate, *vinfo;
+	int nvisuals, shape_event, shapeerror;
 
 	/* do not transform children into zombies when they terminate */ //this comment got me giggling so hard man, lol
 	sigemptyset(&sa.sa_mask);
@@ -2050,6 +2201,31 @@ setup(void)
 	sw = DisplayWidth(dpy, screen);
 	sh = DisplayHeight(dpy, screen);
 	root = RootWindow(dpy, screen);
+	shapeavailable = XShapeQueryExtension(dpy, &shape_event, &shapeerror);
+	memset(&vtemplate, 0, sizeof vtemplate);
+	vtemplate.screen = screen;
+	vtemplate.depth = 32;
+	vtemplate.class = TrueColor;
+	vinfo = XGetVisualInfo(dpy, VisualScreenMask|VisualDepthMask|VisualClassMask,
+		&vtemplate, &nvisuals);
+	if (vinfo) {
+		for (i = 0; i < nvisuals; i++) {
+			XRenderPictFormat *format = XRenderFindVisualFormat(dpy, vinfo[i].visual);
+			if (format && format->direct.alphaMask) {
+				decvisual = vinfo[i].visual;
+				decdepth = vinfo[i].depth;
+				break;
+			}
+		}
+		XFree(vinfo);
+	}
+	if (decvisual && shapeavailable) {
+		deccolormap = XCreateColormap(dpy, root, decvisual, AllocNone);
+		pinfont = XftFontOpenName(dpy, screen, "JetBrainsMono Nerd Font:size=16");
+		if (!pinfont)
+			pinfont = XftFontOpenName(dpy, screen, "Symbols Nerd Font:size=16");
+		reloadpincolor();
+	}
 	drw = drw_create(dpy, screen, root, sw, sh);
 	if (!drw_fontset_create(drw, fonts, LENGTH(fonts)))
 		die("no fonts could be loaded.");
@@ -2068,6 +2244,8 @@ setup(void)
 #endif
 	/* init atoms */
 	utf8string = XInternAtom(dpy, "UTF8_STRING", False);
+	themeatom = XInternAtom(dpy, "_VXWM_THEME_RELOAD", False);
+	aboveatom = XInternAtom(dpy, "_NET_WM_STATE_ABOVE", False);
 	wmatom[WMProtocols] = XInternAtom(dpy, "WM_PROTOCOLS", False);
 	wmatom[WMDelete] = XInternAtom(dpy, "WM_DELETE_WINDOW", False);
 	wmatom[WMState] = XInternAtom(dpy, "WM_STATE", False);
@@ -2076,6 +2254,8 @@ setup(void)
 	netatom[NetSupported] = XInternAtom(dpy, "_NET_SUPPORTED", False);
 	netatom[NetWMName] = XInternAtom(dpy, "_NET_WM_NAME", False);
 	netatom[NetWMState] = XInternAtom(dpy, "_NET_WM_STATE", False);
+	switchwindowatom = XInternAtom(dpy, "_VXWM_ACTIVATE_WINDOW", False);
+	clientstateatom = XInternAtom(dpy, "_VXWM_CLIENT_STATE", False);
 	netatom[NetWMCheck] = XInternAtom(dpy, "_NET_SUPPORTING_WM_CHECK", False);
 	netatom[NetWMFullscreen] = XInternAtom(dpy, "_NET_WM_STATE_FULLSCREEN", False);
 	netatom[NetWMWindowType] = XInternAtom(dpy, "_NET_WM_WINDOW_TYPE", False);
@@ -2172,11 +2352,13 @@ showhide(Client *c)
 			c->ismapped = 1;
 		}
 #endif
+		updateclientdecorations(c);
 		showhide(c->snext);
 	} else {
 		/* hide clients bottom up */
 		showhide(c->snext);
 		SHOWHIDEPROFILE
+		updateclientdecorations(c);
 	}
 }
 
@@ -2184,13 +2366,42 @@ void
 spawn(const Arg *arg)
 {
 	struct sigaction sa;
+	Window root_return, child_return;
+	int cursor_x = 0, cursor_y = 0, window_x, window_y;
+	unsigned int mask_return;
+	const char *command = ((char **)arg->v)[0];
+	char icon_name[96];
+	const char *home = getenv("HOME");
 
 	if (arg->v == dmenucmd)
 		dmenumon[0] = '0' + selmon->num;
-	if (fork() == 0) {
+	if (dpy)
+		XQueryPointer(dpy, root, &root_return, &child_return, &cursor_x,
+			&cursor_y, &window_x, &window_y, &mask_return);
+	if (strstr(command, "blender"))
+		snprintf(icon_name, sizeof(icon_name), "blender");
+	else if (strstr(command, "kitty"))
+		snprintf(icon_name, sizeof(icon_name), "kitty");
+	else if (strstr(command, "firefox"))
+		snprintf(icon_name, sizeof(icon_name), "firefox");
+	else if (strstr(command, "dolphin"))
+		snprintf(icon_name, sizeof(icon_name), "org.kde.dolphin");
+	else
+		snprintf(icon_name, sizeof(icon_name), "%s", command);
+	pid_t child = fork();
+	if (child == 0) {
 		if (dpy)
 			close(ConnectionNumber(dpy));
 		setsid();
+		if (home && icon_name[0]) {
+			char marker[PATH_MAX];
+			snprintf(marker, sizeof(marker),
+				"%s/vxwm/shell/workspace-state/launch-%ld-%d-%d-%s",
+				home, (long)getpid(), cursor_x, cursor_y, icon_name);
+			int fd = open(marker, O_CREAT | O_WRONLY | O_TRUNC, 0600);
+			if (fd >= 0)
+				close(fd);
+		}
 
 		sigemptyset(&sa.sa_mask);
 		sa.sa_flags = 0;
@@ -2382,6 +2593,10 @@ unmanage(Client *c, int destroyed)
 {
 	Monitor *m = c->mon;
 	XWindowChanges wc;
+	if (c->pinft)
+		XftDrawDestroy(c->pinft);
+	if (c->pindec)
+		XDestroyWindow(dpy, c->pindec);
 
 	detach(c);
 	detachstack(c);
@@ -2453,8 +2668,21 @@ updatebars(void)
 void
 updatebarpos(Monitor *m)
 {
+	/* Start from monitor geometry, then recalculate external struts here so
+	 * geometry changes and every other caller use the same current values. */
+	m->wx = m->mx;
+	m->ww = m->mw;
 	m->wy = m->my;
 	m->wh = m->mh;
+#if EXTERNAL_BARS
+	externalbars_apply(m);
+	m->wx += m->strut_left;
+	m->ww -= m->strut_left + m->strut_right;
+	m->wy += m->strut_top;
+	m->wh -= m->strut_top + m->strut_bottom;
+	if (m->ww < 1) m->ww = 1;
+	if (m->wh < 1) m->wh = 1;
+#endif
 	if (m->showbar) {
 #if !BAR_PADDING
 		m->wh -= bh;
@@ -2471,14 +2699,6 @@ updatebarpos(Monitor *m)
 #else
     m->by = -bh - bvp;
 #endif
-#if EXTERNAL_BARS
-    m->wx += m->strut_left;
-    m->ww -= m->strut_left + m->strut_right;
-    m->wy += m->strut_top;
-    m->wh -= m->strut_top + m->strut_bottom;
-    if (m->ww < 1) m->ww = 1;
-    if (m->wh < 1) m->wh = 1;
- #endif
 }
 
 void
@@ -2648,6 +2868,134 @@ updatetitle(Client *c)
 		gettextprop(c->win, XA_WM_NAME, c->name, sizeof c->name);
 	if (c->name[0] == '\0') /* hack to mark broken clients */
 		strcpy(c->name, broken);
+	updateclientdecorations(c);
+}
+
+static void
+updateclientclass(Client *c)
+{
+	XClassHint hint = { NULL, NULL };
+	if (!XGetClassHint(dpy, c->win, &hint))
+		return;
+	c->is_shell = (hint.res_class && !strcasecmp(hint.res_class, "vxwm-shell")) ||
+		(hint.res_name && !strcasecmp(hint.res_name, "vxwm-shell"));
+	if (hint.res_class)
+		XFree(hint.res_class);
+	if (hint.res_name)
+		XFree(hint.res_name);
+}
+
+static Window
+createdecoration(int x, int y, unsigned int w, unsigned int h, const char *name)
+{
+	XSetWindowAttributes wa = {
+		.colormap = deccolormap,
+		.border_pixel = 0,
+		.background_pixel = 0,
+		.override_redirect = True
+	};
+	Window win = XCreateWindow(dpy, root, x, y, w, h, 0, decdepth,
+		InputOutput, decvisual,
+		CWColormap|CWBorderPixel|CWBackPixel|CWOverrideRedirect, &wa);
+	XStoreName(dpy, win, name);
+	XClassHint ch = { .res_name = "vxwm-decoration", .res_class = "Vxwm-decoration" };
+	XSetClassHint(dpy, win, &ch);
+	XShapeCombineRectangles(dpy, win, ShapeInput, 0, 0, NULL, 0,
+		ShapeSet, Unsorted);
+	return win;
+}
+
+static void
+reloadpincolor(void)
+{
+	char path[PATH_MAX], accent[32] = "#d8bafb";
+	const char *home = getenv("HOME");
+	FILE *file;
+
+	if (home) {
+		snprintf(path, sizeof path, "%s/vxwm/shell/accent-color", home);
+		if ((file = fopen(path, "r"))) {
+			if (fgets(accent, sizeof accent, file))
+				accent[strcspn(accent, "\r\n")] = '\0';
+			fclose(file);
+		}
+	}
+	if (pincolorok)
+		XftColorFree(dpy, decvisual, deccolormap, &pincolor);
+	pincolorok = XftColorAllocName(dpy, decvisual, deccolormap, accent, &pincolor);
+	decgeneration++;
+}
+
+static void
+drawpin(Client *c)
+{
+#if INFINITE_TAGS
+	static const FcChar8 thumbtack[] = {0xef, 0x82, 0x8d}; /* Font Awesome thumbtack */
+	XGlyphInfo extents;
+	int baseline;
+	if (!c->pinft || !pinfont)
+		return;
+	XftTextExtentsUtf8(dpy, pinfont, thumbtack, sizeof thumbtack, &extents);
+	baseline = (20 - (pinfont->ascent + pinfont->descent)) / 2 + pinfont->ascent;
+	XClearWindow(dpy, c->pindec);
+	XftDrawStringUtf8(c->pinft, &pincolor, pinfont,
+		(20 - extents.xOff) / 2, baseline, thumbtack, sizeof thumbtack);
+	c->drawn_pinned = c->is_pinned;
+	c->pin_generation = decgeneration;
+#else
+	(void)c;
+#endif
+}
+
+static void
+updateclientdecorations(Client *c)
+{
+	int visible;
+	if (!c || !c->mon)
+		return;
+#if !INFINITE_TAGS
+	return;
+#else
+	if (!shapeavailable || !deccolormap || !pinfont || !pincolorok)
+		return;
+	if (c->is_shell) {
+		if (c->pin_mapped) {
+			XUnmapWindow(dpy, c->pindec);
+			c->pin_mapped = 0;
+		}
+		c->drawn_pinned = -1;
+		return;
+	}
+	if (!c->pindec) {
+		c->pindec = createdecoration(0, 0, 20, 20, "VXWM Window Pin");
+		c->drawn_pinned = -1;
+		c->pinft = XftDrawCreate(dpy, c->pindec, decvisual, deccolormap);
+	}
+	visible = ISVISIBLE(c);
+	if (!visible) {
+		if (c->pin_mapped) {
+			XUnmapWindow(dpy, c->pindec);
+			c->pin_mapped = 0;
+		}
+		c->drawn_pinned = -1;
+		return;
+	}
+	if (c->is_pinned) {
+		XMoveWindow(dpy, c->pindec, c->x + 5, c->y + 5);
+		if (!c->pin_mapped) {
+			XMapWindow(dpy, c->pindec);
+			c->pin_mapped = 1;
+		}
+		if (c->drawn_pinned != c->is_pinned || c->pin_generation != decgeneration)
+			drawpin(c);
+	} else {
+		if (c->pin_mapped) {
+			XUnmapWindow(dpy, c->pindec);
+			c->pin_mapped = 0;
+		}
+		c->drawn_pinned = 0;
+	}
+#endif
 }
 
 void

@@ -1,0 +1,26 @@
+[config]
+version_check = false
+
+[config.wallpaper]
+set = false
+command = "true"
+
+[templates.qml]
+input_path = "~/vxwm/shell/matugen/MatugenColors.qml"
+output_path = "~/vxwm/shell/MatugenColors.qml"
+
+[templates.kde]
+input_path = "~/vxwm/shell/matugen/Matugen.colors"
+output_path = "~/vxwm/shell/Matugen.colors"
+
+[templates.kitty]
+input_path = "~/vxwm/shell/matugen/kitty.conf"
+output_path = "~/vxwm/shell/kitty-matugen.conf"
+
+[templates.accent]
+input_path = "~/vxwm/shell/matugen/accent-color"
+output_path = "~/vxwm/shell/accent-color"
+
+[templates.flameshot]
+input_path = "~/vxwm/shell/matugen/flameshot.ini"
+output_path = "~/vxwm/shell/flameshot.ini"

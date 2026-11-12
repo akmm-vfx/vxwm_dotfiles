@@ -1,0 +1,2 @@
+# VXWM lock screen authentication without the system faillock retry limit.
+auth required pam_unix.so

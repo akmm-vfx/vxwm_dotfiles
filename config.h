@@ -3,9 +3,9 @@
 /* See LICENSE file for copyright and license details. */
 
 /* appearance */
-static const unsigned int borderpx  = 3;        /* border pixel of windows */
+static const unsigned int borderpx  = 0;        /* border pixel of windows */
 static const unsigned int snap      = 0;       /* snap pixel */
-static const int showbar            = 1;        /* 0 means no bar */
+static const int showbar            = 0;        /* 0 means no bar */
 static const int topbar             = 1;        /* 0 means bottom bar */
 static const char *fonts[]          = { "monospace:size=10" };
 static const char dmenufont[]       = "monospace:size=10";
@@ -15,7 +15,7 @@ static MAYBE_CONST char normbgcolor[]           = "#222222";
 static MAYBE_CONST char normbordercolor[]       = "#444444";
 static MAYBE_CONST char normfgcolor[]           = "#bbbbbb";
 static MAYBE_CONST char selfgcolor[]            = "#eeeeee";
-static MAYBE_CONST char selbordercolor[]        = "#005577";
+static MAYBE_CONST char selbordercolor[]        = "#222222";
 static MAYBE_CONST char selbgcolor[]            = "#005577";
 static MAYBE_CONST char *colors[][3] = {
        /*               fg           bg           border   */
@@ -23,7 +23,7 @@ static MAYBE_CONST char *colors[][3] = {
        [SchemeSel]  = { selfgcolor,  selbgcolor,  selbordercolor  },
 };
 
-#define CENTER_NEW_FLOATING_WINDOWS 0 // so, basically, it does what it says. (make 0 to turn off)
+#define CENTER_NEW_FLOATING_WINDOWS 1 // so, basically, it does what it says. (make 0 to turn off)
 #define NEW_FLOATING_WINDOWS_APPEAR_UNDER_CURSOR 0 // so, basically, it does what it says. (make 0 to turn off) 
 
 #if GAPS
@@ -52,10 +52,10 @@ static const int right_sidepad = 0;        /* right horizontal padding of bar */
 #endif
 
 /* tagging */
-static const char *tags[] = { "1", "2", "3", "4", "5", "6", "7", "8", "9" };
+static const char *tags[] = { "1", "2", "3", "4", "5" };
 
 #if OCCUPIED_TAGS_DECORATION
-static const char *occupiedtags[] = { "1+", "2+", "3+", "4+", "5+", "6+", "7+", "8+", "9+" };
+static const char *occupiedtags[] = { "1+", "2+", "3+", "4+", "5+" };
 #endif
 
 #if INFINITE_TAGS
@@ -76,6 +76,10 @@ static const char *occupiedtags[] = { "1+", "2+", "3+", "4+", "5+", "6+", "7+", 
 
 static const char *const autostart[] = {
 	"setxkbmap -layout us,mm -option grp:win_space_toggle",
+	"picom --config \"$HOME/vxwm/picom.conf\"",
+	"pgrep -x sxhkd >/dev/null || sxhkd -c \"$HOME/vxwm/sxhkdrc\"",
+	"\"$HOME/vxwm/shell/wallpaper.sh\" --restore",
+	"\"$HOME/vxwm/shell/start-ui.sh\"",
 	NULL /* must end with NULL */
 };
 #endif
@@ -122,6 +126,7 @@ static const char *dmenucmd[] = { "dmenu_run", "-fn", dmenufont, "-nb", normbgco
 static const char *blendercmd[] = { "blender", NULL };
 
 static const char *termcmd[]  = { "kitty", NULL };
+static const char *dolphincmd[] = { "dolphin", NULL };
 
 #if ZOOM
 static const char *zoomin[] = { "vcompmgr", "-Z", "+0.15", NULL }; // zoom in
@@ -132,10 +137,11 @@ static const char *zoomreset[] = { "vcompmgr", "-Z", "1", NULL }; // set zoom to
 static const Key keys[] = {
 	/* Custom defaults. Super is Mod4; Alt is Mod1. */
 	{ MODKEY, XK_Return, spawn, {.v = termcmd} },
-	{ MODKEY, XK_d,      spawn, {.v = dmenucmd} },
+	/* Super+d is handled by sxhkd for the QML launcher. */
+	{ MODKEY, XK_e,      spawn, {.v = dolphincmd} },
 	{ MODKEY, XK_b,      spawn, {.v = blendercmd} },
-	{ MODKEY, XK_j,      focusstack, {.i = +1} },
-	{ MODKEY, XK_k,      focusstack, {.i = -1} },
+	{ MODKEY, XK_j,      focusstack, {.i = -1} },
+	{ MODKEY, XK_k,      focusstack, {.i = +1} },
 	{ MODKEY, XK_q,      killclient, {0} },
 	{ MODKEY, XK_m,      minimizeclient, {0} },
 	{ MODKEY|ShiftMask, XK_m, restoreminimized, {0} },
@@ -148,10 +154,6 @@ static const Key keys[] = {
 	TAGKEYS(XK_3, 2)
 	TAGKEYS(XK_4, 3)
 	TAGKEYS(XK_5, 4)
-	TAGKEYS(XK_6, 5)
-	TAGKEYS(XK_7, 6)
-	TAGKEYS(XK_8, 7)
-	TAGKEYS(XK_9, 8)
 };
 
 /* button definitions */

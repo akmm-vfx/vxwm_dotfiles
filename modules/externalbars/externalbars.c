@@ -187,7 +187,6 @@ externalbars_reapply_all(void)
     Monitor *m;
 
     for (m = mons; m; m = m->next) {
-        externalbars_apply(m);
         updatebarpos(m);
     }
     if (selmon)

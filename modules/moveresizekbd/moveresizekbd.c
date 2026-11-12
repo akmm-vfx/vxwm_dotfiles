@@ -126,6 +126,7 @@ moveresize(const Arg *arg)
             tmp->x -= canvas_dx;
             tmp->y -= canvas_dy;
             XMoveWindow(dpy, tmp->win, tmp->x, tmp->y);
+            updateclientdecorations(tmp);
           }
         }
       }
