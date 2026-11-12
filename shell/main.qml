@@ -61,9 +61,6 @@ Window {
     DesktopClock {
         textColor: shell.surfaceContainer
     }
-    DesktopRamUsage {
-        textColor: shell.surfaceContainer
-    }
     LauncherPanel {
         backgroundColor: shell.barBackground
         textColor: shell.barAccent

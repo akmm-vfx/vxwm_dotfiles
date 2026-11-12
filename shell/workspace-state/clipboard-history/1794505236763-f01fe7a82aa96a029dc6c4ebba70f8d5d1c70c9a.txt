@@ -1,0 +1,2 @@
+file:///home/arkar/Downloads/kubuntu-26.10-desktop-amd64.iso
+file:///home/arkar/Downloads/Fedora-KDE-Desktop-Live-45-1.4.x86_64.iso

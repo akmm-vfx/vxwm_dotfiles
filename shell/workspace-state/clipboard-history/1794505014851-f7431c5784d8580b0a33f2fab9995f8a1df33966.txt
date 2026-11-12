@@ -1,0 +1,1 @@
+TripoSR / PyTorch / CUDA	My preference	Possible, more setup

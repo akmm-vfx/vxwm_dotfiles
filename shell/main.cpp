@@ -1492,192 +1492,6 @@ private:
 	QString m_stateDirectory;
 };
 
-class ProcessRamMonitor final : public QObject {
-	Q_OBJECT
-	Q_PROPERTY(QVariantList topProcesses READ topProcesses NOTIFY topProcessesChanged)
-	Q_PROPERTY(QString memorySummary READ memorySummary NOTIFY memorySummaryChanged)
-
-public:
-	explicit ProcessRamMonitor(QObject *parent = nullptr)
-		: QObject(parent)
-	{
-		connect(&m_memoryTimer, &QTimer::timeout, this, &ProcessRamMonitor::refreshMemorySummary);
-		connect(&m_processTimer, &QTimer::timeout, this, &ProcessRamMonitor::refreshTopProcesses);
-		m_memoryTimer.start(3000);
-		m_processTimer.start(15000);
-		refreshMemorySummary();
-		refreshTopProcesses();
-	}
-
-	QVariantList topProcesses() const { return m_topProcesses; }
-	QString memorySummary() const { return m_memorySummary; }
-
-signals:
-	void topProcessesChanged();
-	void memorySummaryChanged();
-
-private slots:
-	void refreshMemorySummary()
-	{
-		quint64 totalKilobytes = 0;
-		quint64 availableKilobytes = 0;
-		const long systemPageSize = sysconf(_SC_PAGESIZE);
-		const long physicalPages = sysconf(_SC_PHYS_PAGES);
-		const long availablePages = sysconf(_SC_AVPHYS_PAGES);
-		const quint64 pageSizeKiB = systemPageSize > 0
-			? static_cast<quint64>(systemPageSize / 1024) : 4;
-		if (physicalPages > 0 && availablePages >= 0) {
-			totalKilobytes = static_cast<quint64>(physicalPages) * pageSizeKiB;
-			availableKilobytes = static_cast<quint64>(availablePages) * pageSizeKiB;
-		}
-		QFile meminfo(QStringLiteral("/proc/meminfo"));
-		if (meminfo.open(QIODevice::ReadOnly | QIODevice::Text)) {
-			const QString memoryInfo = QString::fromLatin1(meminfo.readAll());
-			const auto totalMatch = QRegularExpression(
-				QStringLiteral("^MemTotal:\\s*(\\d+)"),
-				QRegularExpression::MultilineOption).match(memoryInfo);
-			const auto availableMatch = QRegularExpression(
-				QStringLiteral("^MemAvailable:\\s*(\\d+)"),
-				QRegularExpression::MultilineOption).match(memoryInfo);
-			bool totalOk = false;
-			bool availableOk = false;
-			const quint64 parsedTotal = totalMatch.captured(1).toULongLong(&totalOk);
-			const quint64 parsedAvailable = availableMatch.captured(1).toULongLong(&availableOk);
-			if (totalOk && availableOk) {
-				totalKilobytes = parsedTotal;
-				availableKilobytes = parsedAvailable;
-			}
-		}
-		if (totalKilobytes > 0 && availableKilobytes <= totalKilobytes) {
-			const double usedGigabytes = static_cast<double>(totalKilobytes - availableKilobytes)
-				/ (1024.0 * 1024.0);
-			const double totalGigabytes = static_cast<double>(totalKilobytes)
-				/ (1024.0 * 1024.0);
-			const QString summary = QString::number(usedGigabytes, 'f', 1)
-				+ QStringLiteral(" / ") + QString::number(totalGigabytes, 'f', 1)
-				+ QStringLiteral(" GB");
-			if (summary != m_memorySummary) {
-				m_memorySummary = summary;
-				emit memorySummaryChanged();
-			}
-		}
-	}
-
-	void refreshTopProcesses()
-	{
-		struct ProcessSample {
-			QString group;
-			QString directory;
-			quint64 residentKilobytes;
-		};
-		QVector<ProcessSample> samples;
-		QHash<QString, quint64> residentByGroup;
-		const long systemPageSize = sysconf(_SC_PAGESIZE);
-		const quint64 pageSizeKiB = systemPageSize > 0
-			? static_cast<quint64>(systemPageSize / 1024) : 4;
-		const QDir procDirectory(QStringLiteral("/proc"));
-		for (const QString &pid : procDirectory.entryList(QDir::Dirs | QDir::NoDotAndDotDot)) {
-			bool isPid = false;
-			pid.toLongLong(&isPid);
-			if (!isPid)
-				continue;
-
-			const QString processDirectory = procDirectory.filePath(pid);
-			QString executable = QFileInfo(processDirectory + QStringLiteral("/exe")).symLinkTarget();
-			QString name = QFileInfo(executable).fileName();
-			if (name.isEmpty()) {
-				QFile comm(processDirectory + QStringLiteral("/comm"));
-				if (!comm.open(QIODevice::ReadOnly))
-					continue;
-				name = QString::fromLocal8Bit(comm.readAll()).trimmed();
-			}
-			if (name.isEmpty())
-				continue;
-			const QString group = name.toCaseFolded();
-			QFile statm(processDirectory + QStringLiteral("/statm"));
-			if (!statm.open(QIODevice::ReadOnly))
-				continue;
-			const QList<QByteArray> statmFields = statm.readAll().simplified().split(' ');
-			if (statmFields.size() < 2)
-				continue;
-			bool rssOk = false;
-			const quint64 residentPages = statmFields.at(1).toULongLong(&rssOk);
-			if (!rssOk)
-				continue;
-			const quint64 residentKilobytes = residentPages * pageSizeKiB;
-			samples.append({group, processDirectory, residentKilobytes});
-			residentByGroup[group] += residentKilobytes;
-		}
-
-		QVector<QPair<QString, quint64>> residentRanking;
-		residentRanking.reserve(residentByGroup.size());
-		for (auto it = residentByGroup.cbegin(); it != residentByGroup.cend(); ++it)
-			residentRanking.append({it.key(), it.value()});
-		std::sort(residentRanking.begin(), residentRanking.end(), [](const auto &left, const auto &right) {
-			return left.second > right.second;
-		});
-		QSet<QString> candidates;
-		for (qsizetype i = 0; i < std::min<qsizetype>(12, residentRanking.size()); ++i)
-			candidates.insert(residentRanking.at(i).first);
-
-		QHash<QString, quint64> groupedKilobytes;
-		for (const ProcessSample &sample : samples) {
-			if (!candidates.contains(sample.group))
-				continue;
-			QFile smaps(sample.directory + QStringLiteral("/smaps_rollup"));
-			quint64 proportionalKilobytes = 0;
-			bool foundPss = false;
-			if (smaps.open(QIODevice::ReadOnly | QIODevice::Text)) {
-				while (!smaps.atEnd()) {
-					const QByteArray line = smaps.readLine();
-					if (!line.startsWith("Pss:"))
-						continue;
-					const QList<QByteArray> fields = line.simplified().split(' ');
-					if (fields.size() >= 2) {
-						bool ok = false;
-						proportionalKilobytes = fields.at(1).toULongLong(&ok);
-						foundPss = ok;
-					}
-					break;
-				}
-			}
-			groupedKilobytes[sample.group] += foundPss
-				? proportionalKilobytes : sample.residentKilobytes;
-		}
-
-		QVector<QPair<QString, quint64>> sorted;
-		sorted.reserve(groupedKilobytes.size());
-		for (auto it = groupedKilobytes.cbegin(); it != groupedKilobytes.cend(); ++it)
-			sorted.append({it.key(), it.value()});
-		std::sort(sorted.begin(), sorted.end(), [](const auto &left, const auto &right) {
-			return left.second > right.second;
-		});
-
-		QVariantList next;
-		for (qsizetype i = 0; i < std::min<qsizetype>(6, sorted.size()); ++i) {
-			const auto &[key, kibibytes] = sorted.at(i);
-			QString displayName = key;
-			displayName[0] = displayName.at(0).toUpper();
-			const double gigabytes = static_cast<double>(kibibytes) / (1024.0 * 1024.0);
-			next.append(QVariantMap{
-				{QStringLiteral("name"), displayName},
-				{QStringLiteral("memory"), QString::number(gigabytes, 'f', 2) + QStringLiteral(" GB")}
-			});
-		}
-		if (next == m_topProcesses)
-			return;
-		m_topProcesses = std::move(next);
-		emit topProcessesChanged();
-	}
-
-
-private:
-	QTimer m_memoryTimer;
-	QTimer m_processTimer;
-	QVariantList m_topProcesses;
-	QString m_memorySummary = QStringLiteral("-- / -- GB");
-};
-
 int main(int argc, char **argv)
 {
 	QGuiApplication application(argc, argv);
@@ -1702,7 +1516,6 @@ int main(int argc, char **argv)
 	NotificationServer notifications;
 	TrayController trayController;
 	WindowSwitcherController windowSwitcher(stateDirectory);
-	ProcessRamMonitor processRamMonitor;
 	if (!notifications.registerOnSessionBus())
 		qWarning() << "Could not register VXWM notification service:" << QDBusConnection::sessionBus().lastError().message();
 	QQmlApplicationEngine engine;
@@ -1724,8 +1537,6 @@ int main(int argc, char **argv)
 		&trayController);
 	engine.rootContext()->setContextProperty(QStringLiteral("windowSwitcher"),
 		&windowSwitcher);
-	engine.rootContext()->setContextProperty(QStringLiteral("processRamMonitor"),
-		&processRamMonitor);
 	QObject::connect(&engine, &QQmlApplicationEngine::warnings,
 		[](const QList<QQmlError> &warnings) {
 		for (const QQmlError &warning : warnings)
